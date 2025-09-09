@@ -1,128 +1,241 @@
-﻿@page
+@page
 @using AgentServer.Pages
 @model IndexModel
 @{
-    Layout = null;
+    ViewData["Title"] = "Agent管理中心";
 }
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PowerShell Web Terminal</title>
-    <link rel="stylesheet" href="~/js/xterm/css/xterm.css" />
+    <title>@ViewData["Title"]</title>
     <style>
-        html, body {
-            height: 100%;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #1e1e1e;
+            padding: 20px;
+            background-color: #f5f5f5;
         }
 
-        #terminal {
-            width: 100%;
-            height: 100%;
-            font-family: Consolas, 'Courier New', monospace;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .agent-list {
+            margin-top: 20px;
+        }
+
+        .agent-item {
+            background-color: #fafafa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .agent-item:hover {
+            background-color: #f0f8ff;
+            border-color: #4CAF50;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .agent-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .agent-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .field-label {
+            font-weight: bold;
+            color: #555;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .field-value {
+            color: #333;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .powershell-btn {
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .powershell-btn:hover {
+            background-color: #106ebe;
+            text-decoration: none;
+            color: white;
+        }
+
+        .script-btn {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .script-btn:hover {
+            background-color: #5a2d91;
+            text-decoration: none;
+            color: white;
+        }
+
+        .no-agents {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            border: 2px dashed #ddd;
+        }
+
+        .refresh-btn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .refresh-btn:hover {
+            background-color: #45a049;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .agent-count {
+            color: #666;
+            font-size: 14px;
+        }
+
+        @@media (max-width: 768px) {
+            .agent-info {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .container {
+                padding: 15px;
+            }
         }
     </style>
 </head>
 <body>
-    <div id="terminal"></div>
+    <div class="container">
+        <h1>💻 Agent管理中心</h1>
+        
+        <div class="header-actions">
+            <div class="agent-count">
+                当前连接的Agent数量: <strong>@Model.Agents.Count</strong>
+            </div>
+            <a href="/" class="refresh-btn">🔄 刷新列表</a>
+        </div>
 
-    <script src="~/js/xterm/lib/xterm.js"></script>
-    <script src="~/js/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
-    <script src="~/js/signalr/dist/browser/signalr.js"></script>
-
-    <script>
-        let agentId = 'JAP8qEAeemDFq1H3y_ZA6Q';
-
-        document.addEventListener("DOMContentLoaded", function () {
-            const term = new Terminal({
-                cursorBlink: true,
-                convertEol: true, // This helps format pasted text with newlines
-                theme: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4' }
-            });
-
-            const fitAddon = new FitAddon.FitAddon();
-            term.loadAddon(fitAddon);
-            term.open(document.getElementById('terminal'));
-            fitAddon.fit();
-            window.onresize = () => fitAddon.fit();
-            term.focus();
-
-            const connection = new signalR.HubConnectionBuilder()
-                .withUrl("/AgentHub")
-                .build();
-
-            connection.on("ReceiveOutput", (output) => term.write(output.replace(/\n/g, '\r\n')));
-
-            async function start() {
-                try {
-                    await connection.start();
-                    console.log("SignalR Connected.");
-                    connection.invoke("RegisterTerminal", agentId);
-                } catch (err) {
-                    console.error(err);
-                    term.write("Connection failed: " + err);
+        <div class="agent-list">
+            @if (Model.Agents.Any())
+            {
+                @foreach (var agent in Model.Agents)
+                {
+                    <div class="agent-item">
+                        <div class="agent-info">
+                            <div class="agent-field">
+                                <span class="field-label">Agent ID</span>
+                                <span class="field-value">@agent.AgentId</span>
+                            </div>
+                            <div class="agent-field">
+                                <span class="field-label">IP地址</span>
+                                <span class="field-value">@agent.IpAddress</span>
+                            </div>
+                            <div class="agent-field">
+                                <span class="field-label">设备序列号</span>
+                                <span class="field-value">@agent.BoardSerial</span>
+                            </div>
+                            <div class="action-buttons">
+                                <a href="/Term/@agent.AgentId" target="_blank" class="powershell-btn">
+                                    💻 PowerShell
+                                </a>
+                                <a href="/Script/@agent.AgentId" target="_blank" class="script-btn">
+                                    📝 执行脚本
+                                </a>
+                            </div>
+                        </div>
+                    </div>
                 }
             }
-            start();
+            else
+            {
+                <div class="no-agents">
+                    <h3>🖥️ 暂无连接的Agent</h3>
+                    <p>请确保Agent已正确配置并连接到服务器</p>
+                </div>
+            }
+        </div>
+    </div>
 
-            let currentCommand = '';
-            let completionCycle = [];
-            let completionIndex = 0;
-
-            // --- Handler 1: Use onKey ONLY for special keys needing preventDefault ---
-            term.onKey(async ({ domEvent }) => {
-                if (domEvent.keyCode === 9) { // Tab
-                    domEvent.preventDefault();
-                    if (completionCycle.length === 0) {
-                        const completions = await connection.invoke("GetCompletion", agentId, currentCommand, currentCommand.length);
-                        if (completions.length === 0) return;
-                        completionCycle = completions;
-                        completionIndex = 0;
-                    } else {
-                        completionIndex = (completionIndex + 1) % completionCycle.length;
-                    }
-
-                    const completion = completionCycle[completionIndex];
-                    const lastSpaceIndex = currentCommand.lastIndexOf(' ');
-                    const wordToComplete = (lastSpaceIndex === -1) ? currentCommand : currentCommand.substring(lastSpaceIndex + 1);
-
-                    term.write('\b \b'.repeat(wordToComplete.length));
-                    term.write(completion);
-
-                    const commandBase = (lastSpaceIndex === -1) ? "" : currentCommand.substring(0, lastSpaceIndex + 1);
-                    currentCommand = commandBase + completion;
-                }
-            });
-
-            // --- Handler 2: Use onData for ALL other input, including typing and pasting ---
-            term.onData((data) => {
-                // Any data input (typing, pasting) breaks the tab completion cycle.
-                // We check if the data is NOT a tab character itself, though onKey handles it.
-                if (data.charCodeAt(0) !== 9) {
-                    completionCycle = [];
-                }
-
-                const code = data.charCodeAt(0);
-                if (code === 13) { // Enter (\r)
-                    term.write('\r\n');
-                    connection.invoke("SendInput", agentId, currentCommand).catch(err => console.error(err.toString()));
-                    currentCommand = '';
-                } else if (code === 127) { // Backspace (\x7F)
-                    if (currentCommand.length > 0) {
-                        term.write('\b \b');
-                        currentCommand = currentCommand.slice(0, -1);
-                    }
-                } else if (code >= 32) { // Printable characters and pasted text
-                    currentCommand += data;
-                    term.write(data);
-                }
-            });
-        });
+    <script>
+        // 自动刷新页面 (可选)
+        // setInterval(() => {
+        //     window.location.reload();
+        // }, 30000); // 30秒刷新一次
     </script>
 </body>
 </html>

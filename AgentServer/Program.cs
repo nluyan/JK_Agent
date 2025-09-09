@@ -2,9 +2,13 @@ using AgentServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 添加服务到容器中
 builder.Services.AddRazorPages();
-builder.Services.AddSignalR(); // 添加 SignalR 服务
+builder.Services.AddSignalR(o =>
+{
+	o.MaximumReceiveMessageSize = 512 * 1024;   // 512 kB
+	o.EnableDetailedErrors = true;
+});
+builder.Services.AddSingleton<AgentService>();
 
 var app = builder.Build();
 
@@ -22,6 +26,6 @@ app.UseRouting();
 app.UseAuthorization();
 
 app.MapRazorPages();
-app.MapHub<AgentHub>("/AgentHub"); // 映射您的 Hub 到一个 URL
+app.MapHub<AgentHub>("/AgentHub"); 
 
 app.Run();

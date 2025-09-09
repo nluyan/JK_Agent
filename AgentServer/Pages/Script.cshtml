@@ -1,0 +1,386 @@
+@page "/Script/{id}"
+@using AgentServer.Pages
+@model ScriptModel
+@{
+    ViewData["Title"] = "PowerShell脚本执行器";
+}
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Agent @Model.Id</title>
+    <!-- Monaco Editor CSS -->
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="/vs/editor/editor.main.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: #2d2d30;
+            padding: 10px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+            .header h1 {
+                color: #4ec9b0;
+                font-size: 18px;
+                margin: 0;
+            }
+
+        .agent-info {
+            color: #9cdcfe;
+            font-size: 14px;
+        }
+
+        .container {
+            display: flex;
+            height: calc(100vh - 60px);
+        }
+
+        .left-panel {
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            border-right: 1px solid #3e3e42;
+        }
+
+        .right-panel {
+            width: 50%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            background-color: #2d2d30;
+            padding: 10px 15px;
+            border-bottom: 1px solid #3e3e42;
+            font-weight: bold;
+            color: #cccccc;
+            font-size: 14px;
+        }
+
+        form {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .script-editor {
+            flex: 1;
+            padding: 15px;
+            background-color: #1e1e1e;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #monaco-container {
+            flex: 1;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        #scriptTextarea {
+            display: none;
+        }
+
+        .controls {
+            padding: 15px;
+            background-color: #252526;
+            border-top: 1px solid #3e3e42;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .execute-btn {
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+        }
+
+            .execute-btn:hover:not(:disabled) {
+                background-color: #1177bb;
+            }
+
+            .execute-btn:disabled {
+                background-color: #6c6c6c;
+                cursor: not-allowed;
+            }
+
+        .clear-btn {
+            background-color: #5a5a5a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+
+            .clear-btn:hover {
+                background-color: #6a6a6a;
+            }
+
+        .status {
+            margin-left: auto;
+            font-size: 12px;
+            color: #cccccc;
+        }
+
+        .output-panel {
+            flex: 1;
+            background-color: #0c0c0c;
+            border: 1px solid #3e3e42;
+            margin: 15px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        #output {
+            width: 100%;
+            height: 100%;
+            background-color: #0c0c0c;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            padding: 15px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .back-btn {
+            background-color: #2d2d30;
+            color: #cccccc;
+            border: 1px solid #3e3e42;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+
+            .back-btn:hover {
+                background-color: #3e3e42;
+                color: white;
+                text-decoration: none;
+            }
+
+        .loading {
+            color: #ffcc02;
+        }
+
+        .error {
+            color: #f14c4c;
+        }
+
+        .success {
+            color: #4ec9b0;
+        }
+
+        .error-message {
+            color: #f14c4c;
+            background-color: #2a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            border-left: 4px solid #f14c4c;
+        }
+
+        .waiting-message {
+            color: #888;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+
+        @@media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .left-panel, .right-panel {
+                width: 100%;
+                height: 50%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💻 PowerShell脚本执行器</h1>
+        <div class="agent-info">Agent ID: @Model.Id</div>
+        <a href="/" class="back-btn">← 返回首页</a>
+    </div>
+
+    <div class="container">
+        <div class="left-panel">
+            <div class="panel-header">📝 脚本编辑器</div>
+            <form method="post" asp-route-id="@Model.Id">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+                <div class="script-editor">
+                    <!-- Monaco Editor容器 -->
+                    <div id="monaco-container"></div>
+                    <!-- 隐藏的textarea用于表单提交 -->
+                    <textarea asp-for="ScriptContent" id="scriptTextarea" name="ScriptContent" style="display: none;"></textarea>
+                </div>
+                <div class="controls">
+                    <button type="submit" id="executeBtn" class="execute-btn" @(Model.IsExecuting ? "disabled" : "")>
+                        @if (Model.IsExecuting)
+                        {
+                            <span>⏳ 执行中...</span>
+                        }
+                        else
+                        {
+                            <span>▶️ 执行脚本</span>
+                        }
+                    </button>
+                    <button type="button" id="clearBtn" class="clear-btn">🗑️ 清空输出</button>
+                    <div id="status" class="status">
+                        @if (Model.IsExecuting)
+                        {
+                            <span class="loading">执行中...</span>
+                        }
+                        else if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                        {
+                            <span class="error">执行失败</span>
+                        }
+                        else if (!string.IsNullOrEmpty(Model.ExecutionResult))
+                        {
+                            <span class="success">执行成功</span>
+                        }
+                        else
+                        {
+                            <span>就绪</span>
+                        }
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="right-panel">
+            <div class="panel-header">📊 执行结果</div>
+            <div class="output-panel">
+                <div id="output">
+                    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                    {
+                        <div class="error-message">
+                            <strong>❗ 执行错误：</strong><br />
+                            @Model.ErrorMessage
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(Model.ExecutionResult))
+                    {
+                        @Model.ExecutionResult
+                    }
+                    else if (Model.IsExecuting)
+                    {
+                        <div class="waiting-message">
+                            ⏳ 正在执行脚本，请稍候...
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="waiting-message">
+                            输入PowerShell脚本并点击"执行脚本"按钮来查看结果
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monaco Editor JavaScript -->
+    <script src="/vs/loader.js"></script>
+    <script>
+        let monacoEditor;
+
+        // 配置Monaco Editor
+        require.config({ paths: { 'vs': '/vs' }});
+
+        require(['vs/editor/editor.main'], function() {
+            // 创建Monaco Editor实例
+            monacoEditor = monaco.editor.create(document.getElementById('monaco-container'), {
+                value: `@Html.Raw(Model.ScriptContent?.Replace("\r\n", "\\n").Replace("\n", "\\n").Replace("\"", "\\\"") ?? "# 在此输入PowerShell脚本...\n\n# 示例：\nGet-Process | Select-Object Name, CPU | Sort-Object CPU -Descending | Select-Object -First 10")`,
+                language: 'powershell',
+                theme: 'vs-dark',
+                fontSize: 14,
+                fontFamily: 'Consolas, "Courier New", monospace',
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                automaticLayout: true,
+                lineNumbers: 'on',
+                folding: true,
+                bracketMatching: 'always',
+                renderWhitespace: 'selection'
+            });
+
+            // 监听编辑器内容变化，同步到隐藏的textarea
+            monacoEditor.onDidChangeModelContent(function() {
+                document.getElementById('scriptTextarea').value = monacoEditor.getValue();
+            });
+
+            // 初始化时设置textarea的值
+            document.getElementById('scriptTextarea').value = monacoEditor.getValue();
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const clearBtn = document.getElementById('clearBtn');
+            const output = document.getElementById('output');
+            const form = document.querySelector('form');
+
+            // 清空输出按钮功能
+            clearBtn.addEventListener('click', function() {
+                output.innerHTML = '<div class="waiting-message">输入PowerShell脚本并点击"执行脚本"按钮来查看结果</div>';
+                const status = document.getElementById('status');
+                status.innerHTML = '<span>就绪</span>';
+            });
+
+            // 表单提交前确保Monaco Editor的内容同步到textarea
+            form.addEventListener('submit', function(e) {
+                if (monacoEditor) {
+                    document.getElementById('scriptTextarea').value = monacoEditor.getValue();
+                }
+            });
+
+            // 如果正在执行，每2秒刷新一次页面
+            @if (Model.IsExecuting)
+            {
+                    <text>
+                    setTimeout(function() {
+                        location.reload();
+                    }, 2000);
+                    </text>
+            }
+        });
+    </script>
+</body>
+</html>
