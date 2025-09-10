@@ -1,245 +1,192 @@
-﻿// 1. 配置连接
-using Microsoft.AspNetCore.SignalR.Client;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Management;
-using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-using System.Text;
-using System.Text.RegularExpressions;
+﻿using System.Diagnostics;
+using System.IO.Compression;
+using System.Text.Json.Nodes;
 
-ConcurrentDictionary<string, PowerShell> shells = new();
-
-var connection = new HubConnectionBuilder()
-	.WithUrl("http://localhost:5110/AgentHub")
-	.WithAutomaticReconnect(new RetryPolicy())
-	.Build();
-
-// 添加连接状态监控事件
-connection.Closed += async (error) =>
+if (args.Length == 0)
 {
-	Console.WriteLine($"连接已断开: {error?.Message ?? "未知原因"}");
-	if (error != null)
-	{
-		Console.WriteLine($"错误类型: {error.GetType().Name}");
-		Console.WriteLine($"堆栈跟踪: {error.StackTrace}");
-	}
-	Console.WriteLine("尝试重新连接中...");
+	StartUpdater();
+	return;
+}
+
+// 添加全局异常处理器
+AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+{
+	Console.WriteLine($"未处理的异常: {e.ExceptionObject}");
+	Console.WriteLine("程序将继续尝试运行...");
 };
 
-connection.Reconnecting += (error) =>
+TaskScheduler.UnobservedTaskException += (sender, e) =>
 {
-    Console.WriteLine($"正在重新连接: {error?.Message ?? "连接丢失"}");
-    return Task.CompletedTask;
+	Console.WriteLine($"未观察到的任务异常: {e.Exception}");
+	e.SetObserved(); // 标记为已观察，防止程序崩溃
 };
 
-connection.Reconnected += async (connectionId) =>
+// 主程序无限循环，确保程序永不退出
+while (true)
 {
-    Console.WriteLine($"重连成功，新连接ID: {connectionId}");
-    // 重连成功后重新注册代理
-    try
-    {
-        await connection.InvokeAsync("RegisterAgent", GetBoardSerial());
-        Console.WriteLine("代理重新注册成功");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"代理重新注册失败: {ex.Message}");
-    }
-};
-
-connection.On<string>("RegisterTerminal", async terminalId =>
-{
-	var ps = PowerShell.Create(InitialSessionState.CreateDefault());
-	shells.TryAdd(terminalId, ps);
-
-	await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
-});
-
-connection.On<string, string>("ExecutePowerShell", async (command, terminalId) =>
-{
-	var ps = shells[terminalId];
-	if (ps.InvocationStateInfo.State == PSInvocationState.Running)
-	{
-		return;
-	}
-	ps.Commands.Clear();
-	ps.Streams.ClearStreams();
-	ps.AddScript(command);
-	ps.AddCommand("Out-String").AddParameter("Stream");
-	var output = new StringBuilder();
-
 	try
 	{
-		var results = await ps.InvokeAsync();
-		if (ps.Streams.Error.Count > 0)
+		Console.WriteLine("正在启动应用程序...");
+
+		var settings = File.ReadAllText("appsettings.json");
+		var node = JsonNode.Parse(settings);
+		var serverUrl = node.Root["ServerUrl"]?.ToString();
+
+		if (string.IsNullOrEmpty(serverUrl))
 		{
-			foreach (var error in ps.Streams.Error)
-			{
-				output.AppendLine(error.ToString());
-			}
+			throw new InvalidOperationException("配置文件中的ServerUrl为空");
 		}
-		else
+
+		// 启动时检查一次更新
+		await CheckAndUpdate(serverUrl);
+
+		// 创建取消令牌源用于控制所有后台任务
+		var cancellationTokenSource = new CancellationTokenSource();
+
+		// 启动定期更新检查任务
+		var updateCheckTask = Task.Run(async () =>
 		{
-			foreach (var item in results)
+			var updateCheckInterval = TimeSpan.FromSeconds(10); // 10分钟检查一次
+			Console.WriteLine($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
+
+			while (!cancellationTokenSource.Token.IsCancellationRequested)
 			{
-				output.AppendLine(item.ToString());
+				try
+				{
+					await Task.Delay(updateCheckInterval, cancellationTokenSource.Token);
+					Console.WriteLine("执行定期更新检查...");
+					await CheckAndUpdate(serverUrl);
+				}
+				catch (TaskCanceledException)
+				{
+					// 正常取消，忽略异常
+					break;
+				}
+				catch (Exception ex)
+				{
+					Console.WriteLine($"定期更新检查失败: {ex.Message}");
+					// 继续运行，不退出程序
+				}
 			}
+		}, cancellationTokenSource.Token);
+
+		// 启动 Agent 并持续运行
+		var agent = new Agent($"{serverUrl}/AgentHub");
+		await agent.Start();
+
+		// 如果代码执行到这里，说明Agent.Start()意外结束了
+		Console.WriteLine("Agent服务意外结束，程序将重新启动...");
+
+	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"程序运行过程中发生错误: {ex.Message}");
+		Console.WriteLine($"错误详情: {ex}");
+		Console.WriteLine("10秒后将重新启动程序...");
+
+		try
+		{
+			await Task.Delay(10000); // 等待10秒后重试
+		}
+		catch (Exception delayEx)
+		{
+			Console.WriteLine($"延时等待异常: {delayEx.Message}");
+			// 即使延时失败也要继续
+		}
+	}
+}
+
+async Task CheckAndUpdate(string serverUrl)
+{
+	try
+	{
+		if (string.IsNullOrEmpty(serverUrl))
+		{
+			Console.WriteLine("ServerUrl为空，跳过更新检查");
+			return;
+		}
+
+		string remoteVersionUrl = $"{serverUrl}/update/version.txt";
+		using var httpClient = new HttpClient();
+		httpClient.Timeout = TimeSpan.FromSeconds(10); // 设置超时时间
+
+		string remoteVersion = (await httpClient.GetStringAsync(remoteVersionUrl)).Trim();
+
+		if (string.IsNullOrEmpty(remoteVersion))
+		{
+			Console.WriteLine("远程版本信息为空，跳过更新");
+			return;
+		}
+
+		if (new Version(remoteVersion) > new Version(Settings.Version))
+		{
+			Console.WriteLine($"发现新版本: {remoteVersion}，当前版本: {Settings.Version}");
+			Console.WriteLine("开始下载更新...");
+
+			// 下载更新器和新版本
+			await DownloadFileAsync($"{serverUrl}/update/Updater.exe", "Updater.exe");
+			await DownloadFileAsync($"{serverUrl}/update/AgentClient.zip", "AgentClient.zip");
+			if(Directory.Exists("temp"))
+				Directory.Delete("temp", true);
+			ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
+
+			Console.WriteLine("启动更新程序...");
+			// 启动 Updater（主程序退出）
+			StartUpdater();
+			Environment.Exit(0);
 		}
 	}
 	catch (Exception ex)
 	{
-		output.AppendLine("Critical execution error: " + ex.Message);
+		Console.WriteLine($"更新检查失败: {ex.Message}");
 	}
-	finally
-	{
-		if (output.Length > 0)
-		{
-			await connection.SendAsync("PowerShellOutput", terminalId, output.ToString());
-		}
-		await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
-	}
-});
-
-
-connection.On<string, string, int>("RequestCompletion", async (terminalId, commandLine, cursorPosition) =>
-{
-	if (!shells.TryGetValue(terminalId, out var ps))
-	{
-		await connection.SendAsync("CompletionCallback", terminalId, new List<string>());
-		return;
-	}
-
-	var completionResult = CommandCompletion.CompleteInput(commandLine, cursorPosition, null, ps);
-	var list = completionResult.CompletionMatches.Select(m => m.CompletionText).ToList();
-	await connection.SendAsync("CompletionCallback", terminalId, list);
-});
-
-connection.On<string, string>("ExecutePowershellScript", async (callId, script) =>
-{
-	Console.WriteLine($"开始执行PowerShell脚本，CallId: {callId}");
-
-	using (var ps = PowerShell.Create(InitialSessionState.CreateDefault()))
-	{
-		ps.AddScript(script);
-		ps.AddCommand("Out-String").AddParameter("Stream");
-		var output = new StringBuilder();
-
-		try
-		{
-			var results = await ps.InvokeAsync();
-			if (ps.Streams.Error.Count > 0)
-			{
-				foreach (var error in ps.Streams.Error)
-				{
-					output.AppendLine(error.ToString());
-				}
-			}
-			else
-			{
-				foreach (var item in results)
-				{
-					if (item != null)
-					{
-						var itemText = item.ToString();
-						if (!string.IsNullOrEmpty(itemText))
-						{
-							output.AppendLine(itemText);
-						}
-					}
-				}
-			}
-		}
-		catch (Exception ex)
-		{
-			output.AppendLine("Critical execution error: " + ex.Message);
-		}
-
-		var outputText = output.ToString();
-		Console.WriteLine($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
-
-		// 检查连接状态
-		if (connection.State != HubConnectionState.Connected)
-		{
-			Console.WriteLine($"连接状态异常: {connection.State}，无法发送结果");
-			return;
-		}
-		await connection.SendAsync("PowershellScriptCallback", callId, outputText);
-	}
-});
-
-string GetPowerShellPath(PowerShell ps)
-{
-	ps.Commands.Clear();
-	ps.Streams.ClearStreams();
-	return ps.AddScript("prompt").Invoke<string>().First();
 }
 
-string GetBoardSerial()
+void StartUpdater()
 {
 	try
 	{
-		using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BaseBoard");
-		foreach (ManagementObject mo in searcher.Get())
+		Process.Start(new ProcessStartInfo
 		{
-			var sn = mo["SerialNumber"]?.ToString()?.Trim();
-			if (!string.IsNullOrWhiteSpace(sn) && !sn.Equals("To be filled by O.E.M.", StringComparison.OrdinalIgnoreCase))
-				return sn;
-		}
+			FileName = "Updater.exe",
+			UseShellExecute = true,
+			CreateNoWindow = true,
+			WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+			WindowStyle = ProcessWindowStyle.Hidden
+		});
 	}
-	catch { /* 忽略异常，降级返回空串 */ }
-	return string.Empty;
+	catch { }
 }
 
-try
+async Task DownloadFileAsync(string url, string filePath)
 {
-    await connection.StartAsync();
-    Console.WriteLine("已连接到服务器...");
-    await connection.InvokeAsync("RegisterAgent", GetBoardSerial());
-    Console.WriteLine("代理注册成功");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"连接失败：{ex.Message}");
-    Console.WriteLine("程序将继续运行，等待自动重连...");
-}
-
-// 添加连接状态监控循环
-var cancellationTokenSource = new CancellationTokenSource();
-var monitorTask = Task.Run(async () =>
-{
-    while (!cancellationTokenSource.Token.IsCancellationRequested)
-    {
-        await Task.Delay(5000, cancellationTokenSource.Token);
-        if (connection.State == HubConnectionState.Disconnected)
-        {
-            Console.WriteLine("检测到连接断开，尝试重新连接...");
-            try
-            {
-                await connection.StartAsync();
-                await connection.InvokeAsync("RegisterAgent", GetBoardSerial());
-                Console.WriteLine("手动重连成功");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"手动重连失败: {ex.Message}");
-            }
-        }
-    }
-}, cancellationTokenSource.Token);
-
-Console.WriteLine("按任意键退出...");
-Console.ReadKey();
-
-cancellationTokenSource.Cancel();
-await connection.StopAsync();
-
-public class RetryPolicy : IRetryPolicy
-{
-	public TimeSpan? NextRetryDelay(RetryContext retryContext)
+	try
 	{
-		// 始终返回2秒间隔，永不停止重连
-		return TimeSpan.FromSeconds(2);
+		if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(filePath))
+		{
+			throw new ArgumentException("URL或文件路径不能为空");
+		}
+
+		using var httpClient = new HttpClient();
+		httpClient.Timeout = TimeSpan.FromSeconds(30); // 增加下载超时时间
+		using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+		response.EnsureSuccessStatusCode();
+
+		var directory = Path.GetDirectoryName(filePath);
+		if (!string.IsNullOrEmpty(directory))
+		{
+			Directory.CreateDirectory(directory);
+		}
+
+		using var contentStream = await response.Content.ReadAsStreamAsync();
+		using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+		await contentStream.CopyToAsync(fileStream);
+
+		Console.WriteLine($"文件下载成功: {filePath}");
+	}
+	catch (Exception ex)
+	{
+		Console.WriteLine($"下载文件失败 {url} -> {filePath}: {ex.Message}");
+		throw; // 重新抛出异常，让上层处理
 	}
 }

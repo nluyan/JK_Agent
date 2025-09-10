@@ -16,14 +16,15 @@ namespace AgentServer
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
 
-		public async Task RegisterAgent(string boardSerial)
+		public async Task RegisterAgent(string boardSerial, string version)
 		{
 			var ip = Context.GetHttpContext()?.Connection.RemoteIpAddress.ToString();
 			service.Add(new AgentModel
 			{
 				AgentId = Context.ConnectionId,
 				IpAddress = ip,
-				BoardSerial = boardSerial
+				BoardSerial = boardSerial,
+				Version = version
 			});
 			Console.WriteLine("Agent Register:" + Context.ConnectionId);
 		}

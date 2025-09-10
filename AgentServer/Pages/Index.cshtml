@@ -58,7 +58,7 @@
 
         .agent-info {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr auto;
+            grid-template-columns: 1fr 1fr 1fr 1fr auto;
             gap: 20px;
             align-items: center;
         }
@@ -200,6 +200,10 @@
                             <div class="agent-field">
                                 <span class="field-label">Agent ID</span>
                                 <span class="field-value">@agent.AgentId</span>
+                            </div>
+                            <div class="agent-field">
+                                <span class="field-label">版本</span>
+                                <span class="field-value">@agent.Version</span>
                             </div>
                             <div class="agent-field">
                                 <span class="field-label">IP地址</span>
