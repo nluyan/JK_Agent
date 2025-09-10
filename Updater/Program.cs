@@ -38,7 +38,7 @@ namespace Updater
 				{
 					FileName = "AgentClient.exe",
 					Arguments = "run",
-					UseShellExecute = false,
+					UseShellExecute = true,
 					CreateNoWindow = true,
 					WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
 					WindowStyle = ProcessWindowStyle.Hidden

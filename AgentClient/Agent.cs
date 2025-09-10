@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR.Client;
+using Serilog;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -27,7 +28,7 @@ internal class Agent
 		{
 			try
 			{
-				Console.WriteLine("正在初始化SignalR连接...");
+				Log.Debug("正在初始化SignalR连接...");
 
 				connection = new HubConnectionBuilder()
 					.WithUrl(serverUrl)
@@ -37,33 +38,33 @@ internal class Agent
 				// 添加连接状态监控事件
 				connection.Closed += async (error) =>
 				{
-					Console.WriteLine($"连接已断开: {error?.Message ?? "未知原因"}");
+					Log.Debug($"连接已断开: {error?.Message ?? "未知原因"}");
 					if (error != null)
 					{
-						Console.WriteLine($"错误类型: {error.GetType().Name}");
-						Console.WriteLine($"堆栈跟踪: {error.StackTrace}");
+						Log.Debug($"错误类型: {error.GetType().Name}");
+						Log.Debug($"堆栈跟踪: {error.StackTrace}");
 					}
-					Console.WriteLine("尝试重新连接中...");
+					Log.Debug("尝试重新连接中...");
 				};
 
 				connection.Reconnecting += (error) =>
 				{
-					Console.WriteLine($"发送错误：{error?.Message ?? "连接丢失"}");
+					Log.Debug($"发送错误：{error?.Message ?? "连接丢失"}");
 					return Task.CompletedTask;
 				};
 
 				connection.Reconnected += async (connectionId) =>
 				{
-					Console.WriteLine($"重连成功，新连接ID: {connectionId}");
+					Log.Debug($"重连成功，新连接ID: {connectionId}");
 					// 重连成功后重新注册代理
 					try
 					{
 						await connection.InvokeAsync("RegisterAgent", GetBoardSerial());
-						Console.WriteLine("代理重新注册成功");
+						Log.Debug("代理重新注册成功");
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"代理重新注册失败: {ex.Message}");
+						Log.Error(ex, $"代理重新注册失败: {ex.Message}");
 					}
 				};
 
@@ -81,7 +82,7 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"注册终端失败 {terminalId}: {ex.Message}");
+						Log.Error(ex, $"注册终端失败 {terminalId}: {ex.Message}");
 					}
 				});
 
@@ -91,7 +92,7 @@ internal class Agent
 					{
 						if (!shells.TryGetValue(terminalId, out var ps))
 						{
-							Console.WriteLine($"终端不存在: {terminalId}");
+							Log.Error($"终端不存在: {terminalId}");
 							return;
 						}
 
@@ -125,6 +126,7 @@ internal class Agent
 						}
 						catch (Exception ex)
 						{
+							Log.Error(ex, "Critical execution error: " + ex.Message);
 							output.AppendLine("Critical execution error: " + ex.Message);
 						}
 						finally
@@ -142,13 +144,13 @@ internal class Agent
 							}
 							catch (Exception ex)
 							{
-								Console.WriteLine($"发送PowerShell输出失败: {ex.Message}");
+								Log.Error(ex, $"发送PowerShell输出失败: {ex.Message}");
 							}
 						}
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"执行PowerShell命令失败: {ex.Message}");
+						Log.Error(ex, $"执行PowerShell命令失败: {ex.Message}");
 					}
 				});
 
@@ -175,7 +177,7 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"请求命令补全失败: {ex.Message}");
+						Log.Debug($"请求命令补全失败: {ex.Message}");
 						try
 						{
 							if (connection?.State == HubConnectionState.Connected)
@@ -185,7 +187,7 @@ internal class Agent
 						}
 						catch (Exception sendEx)
 						{
-							Console.WriteLine($"发送空补全结果失败: {sendEx.Message}");
+							Log.Error(sendEx, $"发送空补全结果失败: {sendEx.Message}");
 						}
 					}
 				});
@@ -194,7 +196,7 @@ internal class Agent
 				{
 					try
 					{
-						Console.WriteLine($"开始执行PowerShell脚本，CallId: {callId}");
+						Log.Debug($"开始执行PowerShell脚本，CallId: {callId}");
 
 						using (var ps = PowerShell.Create(InitialSessionState.CreateDefault()))
 						{
@@ -229,16 +231,17 @@ internal class Agent
 							}
 							catch (Exception ex)
 							{
+								Log.Error(ex, "Critical execution error: " + ex.Message);
 								output.AppendLine("Critical execution error: " + ex.Message);
 							}
 
 							var outputText = output.ToString();
-							Console.WriteLine($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
+							Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
 
 							// 检查连接状态
 							if (connection?.State != HubConnectionState.Connected)
 							{
-								Console.WriteLine($"连接状态异常: {connection?.State}，无法发送结果");
+								Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
 								return;
 							}
 
@@ -248,13 +251,13 @@ internal class Agent
 							}
 							catch (Exception sendEx)
 							{
-								Console.WriteLine($"发送PowerShell脚本结果失败: {sendEx.Message}");
+								Log.Error(sendEx, $"发送PowerShell脚本结果失败: {sendEx.Message}");
 							}
 						}
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"执行PowerShell脚本失败 {callId}: {ex.Message}");
+						Log.Error(ex, $"执行PowerShell脚本失败 {callId}: {ex.Message}");
 					}
 				});
 
@@ -271,7 +274,7 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"获取PowerShell路径失败: {ex.Message}");
+						Log.Error(ex, $"获取PowerShell路径失败: {ex.Message}");
 						return "PS>";
 					}
 				}
@@ -295,14 +298,14 @@ internal class Agent
 				try
 				{
 					await connection.StartAsync();
-					Console.WriteLine("已连接到服务器...");
+					Log.Debug("已连接到服务器...");
 					await connection.InvokeAsync("RegisterAgent", GetBoardSerial(), Settings.Version);
-					Console.WriteLine("代理注册成功");
+					Log.Debug("代理注册成功");
 				}
 				catch (Exception ex)
 				{
-					Console.WriteLine($"连接失败：{ex.Message}");
-					Console.WriteLine("程序将继续运行，等待自动重连...");
+					Log.Error(ex, $"连接失败：{ex.Message}");
+					Log.Debug("程序将继续运行，等待自动重连...");
 				}
 
 				// 添加连接状态监控循环
@@ -318,16 +321,16 @@ internal class Agent
 								await Task.Delay(5000, cancellationTokenSource.Token);
 								if (connection?.State == HubConnectionState.Disconnected)
 								{
-									Console.WriteLine("检测到连接断开，尝试重新连接...");
+									Log.Warning("检测到连接断开，尝试重新连接...");
 									try
 									{
 										await connection.StartAsync();
 										await connection.InvokeAsync("RegisterAgent", GetBoardSerial());
-										Console.WriteLine("重连成功");
+										Log.Debug("重连成功");
 									}
 									catch (Exception ex)
 									{
-										Console.WriteLine($"重连失败: {ex.Message}");
+										Log.Debug($"重连失败: {ex.Message}");
 									}
 								}
 							}
@@ -337,30 +340,30 @@ internal class Agent
 							}
 							catch (Exception ex)
 							{
-								Console.WriteLine($"连接监控过程中发生错误: {ex.Message}");
+								Log.Error(ex, $"连接监控过程中发生错误: {ex.Message}");
 							}
 						}
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"连接监控任务异常退出: {ex.Message}");
+						Log.Error(ex, $"连接监控任务异常退出: {ex.Message}");
 					}
 				}, cancellationTokenSource.Token);
 
-				Console.WriteLine("代理服务已启动，持续运行中...");
+				Log.Debug("代理服务已启动，持续运行中...");
 
 				try
 				{
 					// 持续运行，直到发生异常
 					await Task.Delay(Timeout.Infinite, cancellationTokenSource.Token);
 				}
-				catch (TaskCanceledException)
+				catch (TaskCanceledException e)
 				{
-					Console.WriteLine("Agent服务被取消");
+					Log.Error(e, "Agent服务被取消");
 				}
 				catch (Exception ex)
 				{
-					Console.WriteLine($"Agent服务运行过程中发生错误: {ex.Message}");
+					Log.Error(ex, $"Agent服务运行过程中发生错误: {ex.Message}");
 					throw; // 抛出异常，触发重启
 				}
 				finally
@@ -376,15 +379,15 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine($"停止连接时发生错误: {ex.Message}");
+						Log.Error(ex, $"停止连接时发生错误: {ex.Message}");
 					}
 				}
 
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine($"Agent服务异常: {ex.Message}");
-				Console.WriteLine("5秒后将重新启动Agent服务...");
+				Log.Error(ex, $"Agent服务异常: {ex.Message}");
+				Log.Warning("5秒后将重新启动Agent服务...");
 
 				try
 				{
@@ -395,7 +398,7 @@ internal class Agent
 				}
 				catch (Exception disposeEx)
 				{
-					Console.WriteLine($"清理连接资源失败: {disposeEx.Message}");
+					Log.Error(disposeEx, $"清理连接资源失败: {disposeEx.Message}");
 				}
 
 				try
@@ -404,7 +407,7 @@ internal class Agent
 				}
 				catch (Exception delayEx)
 				{
-					Console.WriteLine($"延时等待异常: {delayEx.Message}");
+					Log.Error(delayEx, $"延时等待异常: {delayEx.Message}");
 				}
 
 				// 继续循环，重新启动Agent

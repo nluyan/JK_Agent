@@ -1,5 +1,8 @@
-﻿using System.Diagnostics;
+﻿using Serilog;
+using System.Diagnostics;
 using System.IO.Compression;
+using System.Management.Automation.Internal;
+using System.Reflection;
 using System.Text.Json.Nodes;
 
 if (args.Length == 0)
@@ -8,16 +11,23 @@ if (args.Length == 0)
 	return;
 }
 
+// 1. 一步到位配置
+Log.Logger = new LoggerConfiguration()
+	.MinimumLevel.Information() // 设置最低日志级别Info
+	.WriteTo.File("logs\\client_log-.txt", rollingInterval: RollingInterval.Month) // 每月一个文件
+	.WriteTo.Console() // 同时输出到控制台
+	.CreateLogger();
+
 // 添加全局异常处理器
 AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
 {
-	Console.WriteLine($"未处理的异常: {e.ExceptionObject}");
-	Console.WriteLine("程序将继续尝试运行...");
+	Log.Debug($"未处理的异常: {e.ExceptionObject}");
+	Log.Debug("程序将继续尝试运行...");
 };
 
 TaskScheduler.UnobservedTaskException += (sender, e) =>
 {
-	Console.WriteLine($"未观察到的任务异常: {e.Exception}");
+	Log.Debug($"未观察到的任务异常: {e.Exception}");
 	e.SetObserved(); // 标记为已观察，防止程序崩溃
 };
 
@@ -26,8 +36,7 @@ while (true)
 {
 	try
 	{
-		Console.WriteLine("正在启动应用程序...");
-
+		Log.Debug("正在启动应用程序...");
 		var settings = File.ReadAllText("appsettings.json");
 		var node = JsonNode.Parse(settings);
 		var serverUrl = node.Root["ServerUrl"]?.ToString();
@@ -47,14 +56,14 @@ while (true)
 		var updateCheckTask = Task.Run(async () =>
 		{
 			var updateCheckInterval = TimeSpan.FromSeconds(10); // 10分钟检查一次
-			Console.WriteLine($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
+			Log.Debug($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
 
 			while (!cancellationTokenSource.Token.IsCancellationRequested)
 			{
 				try
 				{
 					await Task.Delay(updateCheckInterval, cancellationTokenSource.Token);
-					Console.WriteLine("执行定期更新检查...");
+					Log.Debug("执行定期更新检查...");
 					await CheckAndUpdate(serverUrl);
 				}
 				catch (TaskCanceledException)
@@ -64,7 +73,7 @@ while (true)
 				}
 				catch (Exception ex)
 				{
-					Console.WriteLine($"定期更新检查失败: {ex.Message}");
+					Log.Debug($"定期更新检查失败: {ex.Message}");
 					// 继续运行，不退出程序
 				}
 			}
@@ -75,14 +84,14 @@ while (true)
 		await agent.Start();
 
 		// 如果代码执行到这里，说明Agent.Start()意外结束了
-		Console.WriteLine("Agent服务意外结束，程序将重新启动...");
+		Log.Debug("Agent服务意外结束，程序将重新启动...");
 
 	}
 	catch (Exception ex)
 	{
-		Console.WriteLine($"程序运行过程中发生错误: {ex.Message}");
-		Console.WriteLine($"错误详情: {ex}");
-		Console.WriteLine("10秒后将重新启动程序...");
+		Log.Debug($"程序运行过程中发生错误: {ex.Message}");
+		Log.Debug($"错误详情: {ex}");
+		Log.Debug("10秒后将重新启动程序...");
 
 		try
 		{
@@ -90,7 +99,7 @@ while (true)
 		}
 		catch (Exception delayEx)
 		{
-			Console.WriteLine($"延时等待异常: {delayEx.Message}");
+			Log.Debug($"延时等待异常: {delayEx.Message}");
 			// 即使延时失败也要继续
 		}
 	}
@@ -102,7 +111,7 @@ async Task CheckAndUpdate(string serverUrl)
 	{
 		if (string.IsNullOrEmpty(serverUrl))
 		{
-			Console.WriteLine("ServerUrl为空，跳过更新检查");
+			Log.Debug("ServerUrl为空，跳过更新检查");
 			return;
 		}
 
@@ -114,14 +123,14 @@ async Task CheckAndUpdate(string serverUrl)
 
 		if (string.IsNullOrEmpty(remoteVersion))
 		{
-			Console.WriteLine("远程版本信息为空，跳过更新");
+			Log.Debug("远程版本信息为空，跳过更新");
 			return;
 		}
 
 		if (new Version(remoteVersion) > new Version(Settings.Version))
 		{
-			Console.WriteLine($"发现新版本: {remoteVersion}，当前版本: {Settings.Version}");
-			Console.WriteLine("开始下载更新...");
+			Log.Debug($"发现新版本: {remoteVersion}，当前版本: {Settings.Version}");
+			Log.Debug("开始下载更新...");
 
 			// 下载更新器和新版本
 			await DownloadFileAsync($"{serverUrl}/update/Updater.exe", "Updater.exe");
@@ -130,7 +139,7 @@ async Task CheckAndUpdate(string serverUrl)
 				Directory.Delete("temp", true);
 			ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
 
-			Console.WriteLine("启动更新程序...");
+			Log.Debug("启动更新程序...");
 			// 启动 Updater（主程序退出）
 			StartUpdater();
 			Environment.Exit(0);
@@ -138,7 +147,7 @@ async Task CheckAndUpdate(string serverUrl)
 	}
 	catch (Exception ex)
 	{
-		Console.WriteLine($"更新检查失败: {ex.Message}");
+		Log.Debug($"更新检查失败: {ex.Message}");
 	}
 }
 
@@ -182,11 +191,11 @@ async Task DownloadFileAsync(string url, string filePath)
 		using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
 		await contentStream.CopyToAsync(fileStream);
 
-		Console.WriteLine($"文件下载成功: {filePath}");
+		Log.Debug($"文件下载成功: {filePath}");
 	}
 	catch (Exception ex)
 	{
-		Console.WriteLine($"下载文件失败 {url} -> {filePath}: {ex.Message}");
+		Log.Debug($"下载文件失败 {url} -> {filePath}: {ex.Message}");
 		throw; // 重新抛出异常，让上层处理
 	}
 }
