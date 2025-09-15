@@ -14,9 +14,9 @@
 		public string Script { get; set; }
 	}
 
-	public class ScreenDTO : DTOBase
-	{
-	}
+	public class ScreenDTO : DTOBase { }
+
+	public class RemoteDeskDTO : DTOBase { }
 
 	public class LoginDto
 	{

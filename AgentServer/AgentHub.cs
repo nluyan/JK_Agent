@@ -77,6 +77,12 @@ namespace AgentServer
 			service.HandleCaptureResult(callId, result);
 		}
 
+		public void RemoteDeskCallback(string callId, string result)
+		{
+			// 同时处理PowerShellService的回调
+			service.HandleRemoteDeskCallback(callId, result);
+		}
+
 		public void PowershellScriptCallback(string callId, string result)
 		{
 			// 同时处理PowerShellService的回调

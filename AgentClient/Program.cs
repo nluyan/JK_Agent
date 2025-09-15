@@ -9,17 +9,17 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 
 
-AutoStart.SetAutoStart();
-if (args.Length == 0)
-{
-	StartUpdater();
-	return;
-}
+//AutoStart.SetAutoStart();
+//if (args.Length == 0)
+//{
+//	StartUpdater();
+//	return;
+//}
 
 // 1. 一步到位配置
 Log.Logger = new LoggerConfiguration()
-	.MinimumLevel.Information()
-	//.MinimumLevel.Debug()
+	//.MinimumLevel.Information()
+	.MinimumLevel.Debug()
 	.WriteTo.File("logs\\client_log-.txt", rollingInterval: RollingInterval.Month) // 每月一个文件
 	.WriteTo.Console() // 同时输出到控制台
 	.CreateLogger();

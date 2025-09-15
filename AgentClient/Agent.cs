@@ -10,7 +10,9 @@ using System.Management;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -20,6 +22,18 @@ internal class Agent
 
 	string serverUrl;
 	string group;
+
+	string[] InvalidMarkers =
+	{
+					"To be filled by O.E.M.",
+					"Default string",
+					"None",
+					"N/A",
+					"000000000000",
+					"Empty",
+					"System Serial Number",
+					"Base Board Serial Number"
+				};
 
 	public Agent(string url, string group)
 	{
@@ -52,7 +66,7 @@ internal class Agent
 						Log.Debug($"错误类型: {error.GetType().Name}");
 						Log.Debug($"堆栈跟踪: {error.StackTrace}");
 					}
-					
+
 					// 立即尝试一次重连（不等待监控任务）
 					Log.Information("立即尝试重连...");
 					try
@@ -61,8 +75,10 @@ internal class Agent
 						if (connection.State == HubConnectionState.Disconnected)
 						{
 							await connection.StartAsync();
-							await connection.InvokeAsync("RegisterAgent", GetBoardSerial(), 
-								Settings.Version, GetFirstIpv4(), group);
+							await connection.InvokeAsync("RegisterAgent",
+								GetUniqeId(),
+								Settings.Version,
+								GetFirstIpv4(), group);
 							Log.Information("立即重连成功");
 						}
 					}
@@ -84,7 +100,7 @@ internal class Agent
 					// 重连成功后重新注册代理
 					try
 					{
-						await connection.InvokeAsync("RegisterAgent", GetBoardSerial(), Settings.Version, GetFirstIpv4(), group);
+						await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
 						Log.Debug("代理重新注册成功");
 					}
 					catch (Exception ex)
@@ -241,6 +257,15 @@ internal class Agent
 					}
 				});
 
+				connection.On<string, string, string>("RemoteDesk", async (callId, server, key) =>
+				{
+					if (connection.State == HubConnectionState.Connected)
+					{
+						var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
+						await connection.SendAsync("RemoteDeskCallback", callId, result);
+					}
+				});
+
 				connection.On<string, string>("ExecutePowershellScript", async (callId, script) =>
 				{
 					try
@@ -348,27 +373,95 @@ internal class Agent
 					}
 				}
 
-				string GetBoardSerial()
+				string GetUniqeId()
+				{
+					var mac = GetFirstPhysicalMac();
+					var board = GetBoardSerials();
+					if (mac == null && board == null)
+						return "None";
+					else
+					{
+						byte[] bytes = Encoding.UTF8.GetBytes($"{board}{mac}");
+						byte[] hash = MD5.HashData(bytes);
+						return Convert.ToHexString(hash).ToLowerInvariant();
+					}
+						
+				}
+
+				string? GetFirstPhysicalMac()
+				{
+					try
+					{
+						var nic = NetworkInterface.GetAllNetworkInterfaces()
+									.OrderBy(n => n.GetPhysicalAddress().ToString() == "" ? 1 : 0)
+									.ThenBy(n => n.Id) 
+									.FirstOrDefault(n =>
+										n.OperationalStatus == OperationalStatus.Up &&
+										n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+										!n.Description.ToLowerInvariant().Contains("virtual") &&
+										!n.Description.ToLowerInvariant().Contains("vmware") &&
+										!n.Description.ToLowerInvariant().Contains("hyper-v"));
+
+						var mac = nic?.GetPhysicalAddress().ToString();
+						if (!string.IsNullOrWhiteSpace(mac) && mac.Length == 12)
+							return mac; // 例：E41D2D3A4B5C
+					}
+					catch (Exception ex)
+					{
+						
+					}
+					return null;
+				}
+
+				/// <summary>
+				/// 获取主板序列号。
+				/// 如果拿不到有效值，返回 null。
+				/// </summary>
+				string? GetBoardSerials()
 				{
 					try
 					{
 						using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BaseBoard");
 						foreach (ManagementObject mo in searcher.Get())
 						{
-							var sn = mo["SerialNumber"]?.ToString()?.Trim();
-							if (!string.IsNullOrWhiteSpace(sn) && !sn.Equals("To be filled by O.E.M.", StringComparison.OrdinalIgnoreCase))
-								return sn;
+							var raw = mo["SerialNumber"]?.ToString();
+							if (IsValidSerial(raw))
+							{
+								return raw;
+							}
 						}
 					}
-					catch { /* 忽略异常，降级返回空串 */ }
-					return string.Empty;
+					catch (Exception ex)
+					{
+					}
+					return null;   // 不再返回 string.Empty，区分“未获取”与“空值”
+				}
+
+				bool IsValidSerial(string? sn)
+				{
+					if (string.IsNullOrWhiteSpace(sn))
+						return false;
+
+					sn = sn.Trim();
+
+					foreach (var marker in InvalidMarkers)
+					{
+						if (sn.Equals(marker, StringComparison.OrdinalIgnoreCase))
+							return false;
+					}
+
+					// 再兜底：全是 0、空格、下划线也扔掉
+					if (sn.Replace("0", "").Replace("_", "").Replace(" ", "").Length == 0)
+						return false;
+
+					return true;
 				}
 
 				try
 				{
 					await connection.StartAsync();
 					Log.Debug("已连接到服务器...");
-					await connection.InvokeAsync("RegisterAgent", GetBoardSerial(), Settings.Version, GetFirstIpv4(), group);
+					await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
 					Log.Debug("代理注册成功");
 				}
 				catch (Exception ex)
@@ -385,7 +478,7 @@ internal class Agent
 					{
 						var consecutiveFailures = 0;
 						var maxConsecutiveFailures = 10; // 最大连续失败次数
-						
+
 						while (!cancellationTokenSource.Token.IsCancellationRequested)
 						{
 							try
@@ -393,7 +486,7 @@ internal class Agent
 								// 根据连续失败次数调整检查间隔
 								var checkInterval = consecutiveFailures > 5 ? 30000 : 5000; // 5秒或30秒
 								await Task.Delay(checkInterval, cancellationTokenSource.Token);
-								
+
 								if (connection?.State == HubConnectionState.Disconnected)
 								{
 									Log.Warning($"检测到连接断开，尝试第{consecutiveFailures + 1}次重新连接...");
@@ -401,8 +494,8 @@ internal class Agent
 									{
 										// 尝试重新建立连接
 										await connection.StartAsync();
-										await connection.InvokeAsync("RegisterAgent", 
-											GetBoardSerial(), Settings.Version, GetFirstIpv4(), group);
+										await connection.InvokeAsync("RegisterAgent",
+											GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
 										Log.Information("手动重连成功");
 										consecutiveFailures = 0; // 重置失败计数
 									}
@@ -410,7 +503,7 @@ internal class Agent
 									{
 										consecutiveFailures++;
 										Log.Warning($"第{consecutiveFailures}次重连失败: {ex.Message}");
-										
+
 										// 如果连续失败次数过多，可能需要重新创建连接对象
 										if (consecutiveFailures >= maxConsecutiveFailures)
 										{
@@ -429,8 +522,8 @@ internal class Agent
 										consecutiveFailures = 0;
 									}
 								}
-								else if (connection?.State == HubConnectionState.Connecting || 
-								         connection?.State == HubConnectionState.Reconnecting)
+								else if (connection?.State == HubConnectionState.Connecting ||
+										 connection?.State == HubConnectionState.Reconnecting)
 								{
 									// 正在连接中，不做额外操作，但记录状态
 									Log.Debug($"连接状态: {connection?.State}");
@@ -444,7 +537,7 @@ internal class Agent
 							{
 								consecutiveFailures++;
 								Log.Error(ex, $"连接监控过程中发生错误 (第{consecutiveFailures}次): {ex.Message}");
-								
+
 								// 如果监控过程本身出现太多异常，也触发重启
 								if (consecutiveFailures >= maxConsecutiveFailures)
 								{
@@ -576,23 +669,23 @@ internal class Agent
 
 public class RetryPolicy : IRetryPolicy
 {
-    private static readonly TimeSpan[] delays = 
-    {
-        TimeSpan.FromSeconds(0),
-        TimeSpan.FromSeconds(2),
-        TimeSpan.FromSeconds(10),
-        TimeSpan.FromSeconds(30),
-    };
+	private static readonly TimeSpan[] delays =
+	{
+		TimeSpan.FromSeconds(0),
+		TimeSpan.FromSeconds(2),
+		TimeSpan.FromSeconds(10),
+		TimeSpan.FromSeconds(30),
+	};
 
-    public TimeSpan? NextRetryDelay(RetryContext retryContext)
-    {
-        // 根据重试次数返回递增的延迟时间，但始终返回非null值确保永久重试
-        if (retryContext.PreviousRetryCount < delays.Length)
-        {
-            return delays[retryContext.PreviousRetryCount];
-        }
-        
-        // 超过预定义次数后，使用固定的30秒间隔
-        return TimeSpan.FromSeconds(30);
-    }
+	public TimeSpan? NextRetryDelay(RetryContext retryContext)
+	{
+		// 根据重试次数返回递增的延迟时间，但始终返回非null值确保永久重试
+		if (retryContext.PreviousRetryCount < delays.Length)
+		{
+			return delays[retryContext.PreviousRetryCount];
+		}
+
+		// 超过预定义次数后，使用固定的30秒间隔
+		return TimeSpan.FromSeconds(30);
+	}
 }

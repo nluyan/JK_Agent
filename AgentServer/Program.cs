@@ -97,6 +97,7 @@ app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
 	=> await service.ExecutePowershellScript(dto.AgentId, dto.Script)).RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/screen", async (AgentService service, ScreenDTO dto) 
 	=> Results.File(await service.CaptureScreen(dto.AgentId), "image/jpeg", "screen.jpg")).RequireAuthorization("ApiPolicy");
-
+app.MapPost("/api/agent/remotedesk", async (AgentService service, ExecuteDTO dto)
+	=> await service.RemoteDesk(dto.AgentId, builder.Configuration["RemoteDesk:Server"], builder.Configuration["RemoteDesk:Key"])).RequireAuthorization("ApiPolicy");
 
 app.Run();

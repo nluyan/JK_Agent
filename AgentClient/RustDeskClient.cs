@@ -1,5 +1,7 @@
-﻿using System.Buffers.Binary;
+﻿using Serilog;
+using System.Buffers.Binary;
 using System.Data;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
@@ -7,11 +9,6 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 namespace AgentClient
 {
-
-
-#nullable enable
-
-	// --- IPC Request/Response classes ---
 
 	public abstract class IpcRequest
 	{
@@ -342,6 +339,54 @@ namespace AgentClient
 				return bytes;
 			}
 			throw new ArgumentOutOfRangeException(nameof(length), "Message length exceeds the maximum supported size.");
+		}
+
+		public static async Task<string> StartRemoteDesk(string server, string key)
+		{
+			var client = new RustDeskClient();
+			while (true)
+			{
+				var status = await client.GetConnectionStatusAsync();
+				if (status != null)
+				{
+					if (status.StatusNum > 0) //没有连接上服务器
+					{
+						var id = await client.GetIdAsync();
+						var pwd = await client.GetTemporaryPasswordAsync();
+						Log.Debug("执行成功");
+						return id + "," + pwd;
+					}
+					else if (status.StatusNum <= 0)
+					{
+						Log.Debug("设置服务器");
+						await client.SetOptionsAsync(new Dictionary<string, string>
+									{
+										{ "custom-rendezvous-server", server },
+										{ "key", key }
+									});
+						await Task.Delay(2000);
+					}
+					else
+					{
+						Log.Debug("延迟一秒");
+						await Task.Delay(1000);
+					}
+				}
+				else //没有启动
+				{
+					Log.Debug("启动rustdesk");
+					var process = Process.Start(new ProcessStartInfo
+					{
+						FileName = "rd.exe",
+						Arguments = "--server",
+						UseShellExecute = true,
+						CreateNoWindow = true,
+						WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+						WindowStyle = ProcessWindowStyle.Hidden
+					});
+					await process.WaitForExitAsync();
+				}
+			}
 		}
 	}
 

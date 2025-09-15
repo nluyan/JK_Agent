@@ -9,6 +9,7 @@ namespace AgentServer
 		private readonly IHubContext<AgentHub> _hubContext;
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _scriptCallbacks = new();
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _captureCallbacks = new();
+		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _remoteDeskCallbacks = new();
 
 		public AgentService(IHubContext<AgentHub> hubContext)
 		{
@@ -103,6 +104,38 @@ namespace AgentServer
 			}
 		}
 
+		public async Task<string> RemoteDesk(string agentId, string server, string key)
+		{
+			var requestId = Guid.NewGuid().ToString();
+			var tcs = new TaskCompletionSource<string>();
+			_remoteDeskCallbacks.TryAdd(requestId, tcs);
+
+			try
+			{
+				// 发送脚本执行请求到Agent
+				await _hubContext.Clients.Client(agentId).SendAsync("RemoteDesk", requestId, server, key);
+
+				// 等待客户端回传结果（最多等30秒）
+				var task = await Task.WhenAny(tcs.Task, Task.Delay(30000));
+				if (task == tcs.Task)
+				{
+					var result = await tcs.Task;
+					_remoteDeskCallbacks.TryRemove(requestId, out _);
+					return result;
+				}
+				else
+				{
+					_remoteDeskCallbacks.TryRemove(requestId, out _);
+					throw new TimeoutException("执行超时，Agent未在30秒内返回结果");
+				}
+			}
+			catch (Exception ex)
+			{
+				_remoteDeskCallbacks.TryRemove(requestId, out _);
+				throw new Exception($"启动远程桌面失败: {ex.Message}");
+			}
+		}
+
 		public void HandleCaptureResult(string requestId, byte[] imageData)
 		{
 			if (_captureCallbacks.TryRemove(requestId, out var tcs))
@@ -114,6 +147,14 @@ namespace AgentServer
 		public void HandleScriptCallback(string requestId, string result)
 		{
 			if (_scriptCallbacks.TryRemove(requestId, out var tcs))
+			{
+				tcs.TrySetResult(result);
+			}
+		}
+
+		public void HandleRemoteDeskCallback(string requestId, string result)
+		{
+			if (_remoteDeskCallbacks.TryRemove(requestId, out var tcs))
 			{
 				tcs.TrySetResult(result);
 			}
