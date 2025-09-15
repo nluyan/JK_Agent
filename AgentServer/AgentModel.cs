@@ -9,5 +9,7 @@
 		public string BoardSerial { get; set; }
 
 		public string Version { get; set; }
+
+		public string Group { get; set; }
 	}
 }

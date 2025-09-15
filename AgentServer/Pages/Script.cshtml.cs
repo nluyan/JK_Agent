@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.SignalR;
 
 namespace AgentServer.Pages
 {
+    [Authorize]
     public class ScriptModel : PageModel
     {
 		private readonly AgentService _agentService;

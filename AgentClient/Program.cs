@@ -1,10 +1,15 @@
-﻿using Serilog;
+﻿using AgentClient;
+using Microsoft.PowerShell;
+using Serilog;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Management.Automation.Internal;
+using System.Management.Automation.Runspaces;
 using System.Reflection;
 using System.Text.Json.Nodes;
 
+
+AutoStart.SetAutoStart();
 if (args.Length == 0)
 {
 	StartUpdater();
@@ -13,7 +18,8 @@ if (args.Length == 0)
 
 // 1. 一步到位配置
 Log.Logger = new LoggerConfiguration()
-	.MinimumLevel.Information() // 设置最低日志级别Info
+	.MinimumLevel.Information()
+	//.MinimumLevel.Debug()
 	.WriteTo.File("logs\\client_log-.txt", rollingInterval: RollingInterval.Month) // 每月一个文件
 	.WriteTo.Console() // 同时输出到控制台
 	.CreateLogger();
@@ -31,31 +37,36 @@ TaskScheduler.UnobservedTaskException += (sender, e) =>
 	e.SetObserved(); // 标记为已观察，防止程序崩溃
 };
 
+Log.Debug("正在启动应用程序...");
+var settings = File.ReadAllText("appsettings.json");
+var node = JsonNode.Parse(settings);
+var serverUrl = node.Root["ServerUrl"].ToString();
+var group = node.Root["Group"].ToString();
+
+if (string.IsNullOrEmpty(serverUrl))
+{
+	throw new InvalidOperationException("配置文件中的ServerUrl为空");
+}
+if (string.IsNullOrEmpty(group))
+{
+	throw new InvalidOperationException("配置文件中的Group为空");
+}
+
+// 启动时检查一次更新
+await CheckAndUpdate(serverUrl);
+
 // 主程序无限循环，确保程序永不退出
 while (true)
 {
 	try
 	{
-		Log.Debug("正在启动应用程序...");
-		var settings = File.ReadAllText("appsettings.json");
-		var node = JsonNode.Parse(settings);
-		var serverUrl = node.Root["ServerUrl"]?.ToString();
-
-		if (string.IsNullOrEmpty(serverUrl))
-		{
-			throw new InvalidOperationException("配置文件中的ServerUrl为空");
-		}
-
-		// 启动时检查一次更新
-		await CheckAndUpdate(serverUrl);
-
 		// 创建取消令牌源用于控制所有后台任务
 		var cancellationTokenSource = new CancellationTokenSource();
 
 		// 启动定期更新检查任务
 		var updateCheckTask = Task.Run(async () =>
 		{
-			var updateCheckInterval = TimeSpan.FromSeconds(10); // 10分钟检查一次
+			var updateCheckInterval = TimeSpan.FromMinutes(10); // 10分钟检查一次
 			Log.Debug($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
 
 			while (!cancellationTokenSource.Token.IsCancellationRequested)
@@ -73,35 +84,24 @@ while (true)
 				}
 				catch (Exception ex)
 				{
-					Log.Debug($"定期更新检查失败: {ex.Message}");
+					Log.Debug(ex, $"定期更新检查失败: {ex.Message}");
 					// 继续运行，不退出程序
 				}
 			}
 		}, cancellationTokenSource.Token);
 
 		// 启动 Agent 并持续运行
-		var agent = new Agent($"{serverUrl}/AgentHub");
+		var agent = new Agent($"{serverUrl}/AgentHub", group);
 		await agent.Start();
 
 		// 如果代码执行到这里，说明Agent.Start()意外结束了
-		Log.Debug("Agent服务意外结束，程序将重新启动...");
+		Log.Warning("Agent服务意外结束，程序将重新启动...");
 
 	}
 	catch (Exception ex)
 	{
-		Log.Debug($"程序运行过程中发生错误: {ex.Message}");
-		Log.Debug($"错误详情: {ex}");
-		Log.Debug("10秒后将重新启动程序...");
-
-		try
-		{
-			await Task.Delay(10000); // 等待10秒后重试
-		}
-		catch (Exception delayEx)
-		{
-			Log.Debug($"延时等待异常: {delayEx.Message}");
-			// 即使延时失败也要继续
-		}
+		Log.Error(ex, $"程序运行过程中发生错误: {ex.Message} 10秒后将重新启动程序...");
+		await Task.Delay(10000); // 等待10秒后重试
 	}
 }
 
@@ -115,7 +115,7 @@ async Task CheckAndUpdate(string serverUrl)
 			return;
 		}
 
-		string remoteVersionUrl = $"{serverUrl}/update/version.txt";
+		string remoteVersionUrl = $"{serverUrl}/update/{group}/version.txt";
 		using var httpClient = new HttpClient();
 		httpClient.Timeout = TimeSpan.FromSeconds(10); // 设置超时时间
 
@@ -129,17 +129,16 @@ async Task CheckAndUpdate(string serverUrl)
 
 		if (new Version(remoteVersion) > new Version(Settings.Version))
 		{
-			Log.Debug($"发现新版本: {remoteVersion}，当前版本: {Settings.Version}");
-			Log.Debug("开始下载更新...");
+			Log.Information($"发现新版本: {remoteVersion}，当前版本: {Settings.Version} 开始下载更新...");
 
 			// 下载更新器和新版本
-			await DownloadFileAsync($"{serverUrl}/update/Updater.exe", "Updater.exe");
-			await DownloadFileAsync($"{serverUrl}/update/AgentClient.zip", "AgentClient.zip");
+			await DownloadFileAsync($"{serverUrl}/update/{group}/Updater.exe", "Updater.exe");
+			await DownloadFileAsync($"{serverUrl}/update/{group}/AgentClient.zip", "AgentClient.zip");
 			if(Directory.Exists("temp"))
 				Directory.Delete("temp", true);
 			ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
 
-			Log.Debug("启动更新程序...");
+			Log.Information("启动更新程序...");
 			// 启动 Updater（主程序退出）
 			StartUpdater();
 			Environment.Exit(0);
@@ -147,7 +146,7 @@ async Task CheckAndUpdate(string serverUrl)
 	}
 	catch (Exception ex)
 	{
-		Log.Debug($"更新检查失败: {ex.Message}");
+		Log.Error(ex, $"更新检查失败: {ex.Message}");
 	}
 }
 
@@ -177,7 +176,7 @@ async Task DownloadFileAsync(string url, string filePath)
 		}
 
 		using var httpClient = new HttpClient();
-		httpClient.Timeout = TimeSpan.FromSeconds(30); // 增加下载超时时间
+		httpClient.Timeout = TimeSpan.FromMinutes(10);
 		using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
 		response.EnsureSuccessStatusCode();
 
@@ -191,11 +190,11 @@ async Task DownloadFileAsync(string url, string filePath)
 		using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
 		await contentStream.CopyToAsync(fileStream);
 
-		Log.Debug($"文件下载成功: {filePath}");
+		Log.Information($"文件下载成功: {filePath}");
 	}
 	catch (Exception ex)
 	{
-		Log.Debug($"下载文件失败 {url} -> {filePath}: {ex.Message}");
+		Log.Error(ex, $"下载文件失败 {url} -> {filePath}: {ex.Message}");
 		throw; // 重新抛出异常，让上层处理
 	}
 }

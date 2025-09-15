@@ -16,15 +16,15 @@ namespace AgentServer
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
 
-		public async Task RegisterAgent(string boardSerial, string version)
+		public async Task RegisterAgent(string boardSerial, string version, string ip, string group)
 		{
-			var ip = Context.GetHttpContext()?.Connection.RemoteIpAddress.ToString();
 			service.Add(new AgentModel
 			{
 				AgentId = Context.ConnectionId,
 				IpAddress = ip,
 				BoardSerial = boardSerial,
-				Version = version
+				Version = version,
+				Group = group
 			});
 			Console.WriteLine("Agent Register:" + Context.ConnectionId);
 		}
@@ -69,6 +69,12 @@ namespace AgentServer
 			{
 				tcs.TrySetResult(result);
 			}
+		}
+
+		public void CaptureScreenCallback(string callId, byte[] result)
+		{
+			// 同时处理PowerShellService的回调
+			service.HandleCaptureResult(callId, result);
 		}
 
 		public void PowershellScriptCallback(string callId, string result)

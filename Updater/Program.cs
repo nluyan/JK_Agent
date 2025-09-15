@@ -18,8 +18,10 @@ namespace Updater
 				{
 					try
 					{
-						var ss = process.MainModule.FileName;
-						process.Kill();
+						var fileInfo = new FileInfo(process.MainModule.FileName);
+						//Todo：判断一下是自己的应用，避免误杀别的同名进程
+						if (File.Exists(Path.Combine(fileInfo.DirectoryName, "appsettings.json")))
+							process.Kill();
 					}
 					catch { }
 				}

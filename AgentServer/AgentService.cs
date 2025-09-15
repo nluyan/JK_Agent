@@ -8,6 +8,7 @@ namespace AgentServer
 		private readonly ConcurrentDictionary<string, AgentModel> agents = new();
 		private readonly IHubContext<AgentHub> _hubContext;
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _scriptCallbacks = new();
+		private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _captureCallbacks = new();
 
 		public AgentService(IHubContext<AgentHub> hubContext)
 		{
@@ -69,6 +70,44 @@ namespace AgentServer
 			{
 				_scriptCallbacks.TryRemove(requestId, out _);
 				throw new Exception($"执行PowerShell脚本失败: {ex.Message}");
+			}
+		}
+
+		public async Task<byte[]> CaptureScreen(string agentId)
+		{
+			var requestId = Guid.NewGuid().ToString();
+			var tcs = new TaskCompletionSource<byte[]>();
+			_captureCallbacks.TryAdd(requestId, tcs);
+
+			try
+			{
+				await _hubContext.Clients.Client(agentId).SendAsync("CaptureScreen", requestId);
+				var task = await Task.WhenAny(tcs.Task, Task.Delay(50000));
+				if (task == tcs.Task)
+				{
+					var result = await tcs.Task;
+					return result;
+				}
+				else
+				{
+					throw new TimeoutException("截屏执行超时，Agent未在30秒内返回结果");
+				}
+			}
+			catch (Exception ex)
+			{
+				throw new Exception($"截屏失败: {ex.Message}");
+			}
+			finally
+			{
+				_captureCallbacks.TryRemove(requestId, out _);
+			}
+		}
+
+		public void HandleCaptureResult(string requestId, byte[] imageData)
+		{
+			if (_captureCallbacks.TryRemove(requestId, out var tcs))
+			{
+				tcs.TrySetResult(imageData);
 			}
 		}
 

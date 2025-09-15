@@ -58,7 +58,7 @@
 
         .agent-info {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr auto;
+            grid-template-columns: 70px 1fr 40px 120px 1fr auto;
             gap: 20px;
             align-items: center;
         }
@@ -128,6 +128,31 @@
             color: white;
         }
 
+        .capture-btn {
+            background-color: #ff6b35;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .capture-btn:hover {
+            background-color: #e55a2b;
+            text-decoration: none;
+            color: white;
+        }
+
+        .capture-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
         .no-agents {
             text-align: center;
             color: #666;
@@ -180,6 +205,13 @@
     </style>
 </head>
 <body>
+    @{
+        // 添加防伪令牌支持
+    }
+    <form method="post" style="display: none;">
+        @Html.AntiForgeryToken()
+    </form>
+    
     <div class="container">
         <h1>💻 Agent管理中心</h1>
         
@@ -187,7 +219,17 @@
             <div class="agent-count">
                 当前连接的Agent数量: <strong>@Model.Agents.Count</strong>
             </div>
-            <a href="/" class="refresh-btn">🔄 刷新列表</a>
+            <div style="display: flex; gap: 10px;">
+                <span style="color: #666; font-size: 14px;">欢迎, @User.Identity.Name</span>
+                <a href="/" class="refresh-btn">🔄 刷新列表</a>
+                <form method="post" style="display: inline;">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="handler" value="Logout" />
+                    <button type="submit" class="refresh-btn" style="background-color: #dc3545;">
+                        🚪 退出登录
+                    </button>
+                </form>
+            </div>
         </div>
 
         <div class="agent-list">
@@ -197,6 +239,10 @@
                 {
                     <div class="agent-item">
                         <div class="agent-info">
+                            <div class="agent-field">
+                                <span class="field-label">机构</span>
+                                <span class="field-value">@agent.Group</span>
+                            </div>
                             <div class="agent-field">
                                 <span class="field-label">Agent ID</span>
                                 <span class="field-value">@agent.AgentId</span>
@@ -220,6 +266,9 @@
                                 <a href="/Script/@agent.AgentId" target="_blank" class="script-btn">
                                     📝 执行脚本
                                 </a>
+                                <button onclick="captureScreen('@agent.AgentId')" class="capture-btn" id="capture-btn-@agent.AgentId">
+                                    📸 屏幕截图
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -240,6 +289,72 @@
         // setInterval(() => {
         //     window.location.reload();
         // }, 30000); // 30秒刷新一次
+
+        async function captureScreen(agentId) {
+            const button = document.getElementById(`capture-btn-${agentId}`);
+            const originalText = button.innerHTML;
+            
+            try {
+                // 禁用按钮并显示等待状态
+                button.disabled = true;
+                button.innerHTML = '📸 截图中...';
+                
+                const formData = new FormData();
+                formData.append('agentId', agentId);
+                formData.append('handler', 'CaptureScreen');
+                
+                // 获取防伪令牌
+                const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+                if (tokenInput) {
+                    formData.append('__RequestVerificationToken', tokenInput.value);
+                }
+                
+                const response = await fetch('/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    // 检查响应类型
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('image/jpg')) {
+                        // 截图成功，下载图片
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `screenshot_${agentId}_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                        
+                        alert('截图成功！图片已下载。');
+                    } else {
+                        // 可能是JSON错误响应
+                        const responseText = await response.text();
+                        try {
+                            const errorData = JSON.parse(responseText);
+                            alert(`截图失败: ${errorData.error}`);
+                        } catch (jsonError) {
+                            console.error('服务器返回非JSON响应:', responseText);
+                            alert('服务器返回了意外的响应格式，请检查服务器状态。');
+                        }
+                    }
+                } else {
+                    const responseText = await response.text();
+                    console.error('请求失败:', response.status, responseText);
+                    alert(`请求失败 (${response.status})，请稍后重试。`);
+                }
+            } catch (error) {
+                console.error('截图错误:', error);
+                alert('截图失败，请稍后重试。');
+            } finally {
+                // 恢复按钮状态
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
     </script>
 </body>
 </html>
