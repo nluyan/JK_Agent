@@ -2,9 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace JikeStarter
@@ -19,7 +21,20 @@ namespace JikeStarter
 			}
 			else
 			{
-				Process.Start("rd.exe");
+				var match = Regex.Match(args[0], "jike://remotedesk/(?<id>\\d+)/(?<pwd>.*)");
+				if (match.Success)
+				{
+					var id = match.Groups["id"].Value;
+					var pwd = match.Groups["pwd"].Value;
+					Process.Start(new ProcessStartInfo 
+					{
+						WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+						FileName = "rd.exe",
+						Arguments = $"--connect {id} {pwd}",
+						UseShellExecute = false,
+					});
+				}
+				
 			}
 		}
 
@@ -43,7 +58,7 @@ namespace JikeStarter
 				jike.SetValue("URL Protocol", "", RegistryValueKind.String); // 空字符串
 			}
 
-			string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+			string exePath = Process.GetCurrentProcess().MainModule.FileName;
 
 			// 2. DefaultIcon
 			using (var icon = Registry.ClassesRoot.CreateSubKey(@"jike\DefaultIcon"))

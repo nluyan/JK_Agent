@@ -1,4 +1,4 @@
-﻿using AgentClient;
+﻿﻿using AgentClient;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.PowerShell;
@@ -33,19 +33,19 @@ internal class Agent
 					"Empty",
 					"System Serial Number",
 					"Base Board Serial Number"
-				};
+	};
 
 	public Agent(string url, string group)
 	{
 		serverUrl = url;
 		this.group = group;
 	}
-	public async Task Start()
+	public async Task Start(CancellationToken stoppingToken)
 	{
 		HubConnection connection = null;
 
 		// 无限循环确保Agent永不退出
-		while (true)
+		while (!stoppingToken.IsCancellationRequested)
 		{
 			try
 			{
@@ -60,31 +60,34 @@ internal class Agent
 				// 添加连接状态监控事件
 				connection.Closed += async (error) =>
 				{
-					Log.Warning($"连接已断开: {error?.Message ?? "未知原因"}");
-					if (error != null)
+					if (!stoppingToken.IsCancellationRequested)
 					{
-						Log.Debug($"错误类型: {error.GetType().Name}");
-						Log.Debug($"堆栈跟踪: {error.StackTrace}");
-					}
-
-					// 立即尝试一次重连（不等待监控任务）
-					Log.Information("立即尝试重连...");
-					try
-					{
-						await Task.Delay(1000); // 等待1秒
-						if (connection.State == HubConnectionState.Disconnected)
+						Log.Warning($"连接已断开: {error?.Message ?? "未知原因"}");
+						if (error != null)
 						{
-							await connection.StartAsync();
-							await connection.InvokeAsync("RegisterAgent",
-								GetUniqeId(),
-								Settings.Version,
-								GetFirstIpv4(), group);
-							Log.Information("立即重连成功");
+							Log.Debug($"错误类型: {error.GetType().Name}");
+							Log.Debug($"堆栈跟踪: {error.StackTrace}");
 						}
-					}
-					catch (Exception ex)
-					{
-						Log.Warning($"立即重连失败: {ex.Message}，将由监控任务继续尝试");
+
+						// 立即尝试一次重连（不等待监控任务）
+						Log.Information("立即尝试重连...");
+						try
+						{
+							await Task.Delay(1000); // 等待1秒
+							if (connection.State == HubConnectionState.Disconnected)
+							{
+								await connection.StartAsync();
+								await connection.InvokeAsync("RegisterAgent",
+									GetUniqeId(),
+									Settings.Version,
+									GetFirstIpv4(), group);
+								Log.Information("立即重连成功");
+							}
+						}
+						catch (Exception ex)
+						{
+							Log.Warning($"立即重连失败: {ex.Message}，将由监控任务继续尝试");
+						}
 					}
 				};
 
@@ -111,15 +114,31 @@ internal class Agent
 
 				connection.On<string>("CaptureScreen", async requestId =>
 				{
-					if (connection.State == HubConnectionState.Connected)
+					Log.Information("收到CaptureScreen请求");
+					try
 					{
-						var data = ScreenCapture.Capture();
-						await connection.SendAsync("CaptureScreenCallback", requestId, data);
+						ScreenCapture.StartCapture();
+						await Task.Delay(2000);
+						if (File.Exists("screenshot.jpg"))
+						{
+							var data = File.ReadAllBytes("screenshot.jpg");
+							await connection.SendAsync("CaptureScreenCallback", requestId, data);
+						}
+						else
+						{
+							Log.Error("截图文件不存在");
+							await connection.SendAsync("CaptureScreenCallback", requestId, Array.Empty<byte>());
+						}
+					}
+					catch(Exception ex)
+					{
+						Log.Error(ex, $"截屏失败: {ex.Message}");
 					}
 				});
 
 				connection.On<string>("RegisterTerminal", async terminalId =>
 				{
+					Log.Information("收到RegisterTerminal请求");
 					try
 					{
 						var ps = PowerShell.Create();
@@ -138,6 +157,7 @@ internal class Agent
 
 				connection.On<string>("TerminalClosed", async terminalId =>
 				{
+					Log.Information("收到TerminalClosed请求");
 					try
 					{
 						if (shells.TryRemove(terminalId, out var ps))
@@ -153,6 +173,7 @@ internal class Agent
 
 				connection.On<string, string>("ExecutePowerShell", async (command, terminalId) =>
 				{
+					Log.Information("收到ExecutePowerShell请求");
 					try
 					{
 						if (!shells.TryGetValue(terminalId, out var ps))
@@ -221,6 +242,7 @@ internal class Agent
 
 				connection.On<string, string, int>("RequestCompletion", async (terminalId, commandLine, cursorPosition) =>
 				{
+					Log.Information("收到RequestCompletion请求");
 					try
 					{
 						if (!shells.TryGetValue(terminalId, out var ps))
@@ -259,35 +281,19 @@ internal class Agent
 
 				connection.On<string, string, string>("RemoteDesk", async (callId, server, key) =>
 				{
-					if (connection.State == HubConnectionState.Connected)
-					{
-						var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
-						await connection.SendAsync("RemoteDeskCallback", callId, result);
-					}
+					Log.Information("收到RemoteDesk请求");
+					var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
+					await connection.SendAsync("RemoteDeskCallback", callId, result);
 				});
 
 				connection.On<string, string>("ExecutePowershellScript", async (callId, script) =>
 				{
+					Log.Information("收到ExecutePowershellScript请求");
 					try
 					{
-						Log.Debug($"开始执行PowerShell脚本，CallId: {callId}");
-
+						Log.Information("执行脚本:\n" + script);
 						var iss = InitialSessionState.CreateDefault();
 						iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
-
-						// 把当前机器所有模块目录下的 *.psd1 一次性塞进列表
-						//var allDirs = Environment.GetEnvironmentVariable("PSModulePath").Split(';');
-						//var allModules = allDirs
-						//				 .Where(Directory.Exists)
-						//				 .SelectMany(Directory.EnumerateDirectories)
-						//				 .SelectMany(d => Directory.EnumerateFiles(d, "*.psd1"))
-						//				 .Select(Path.GetFileNameWithoutExtension)
-						//				 .Distinct(StringComparer.OrdinalIgnoreCase)
-						//				 .ToArray();
-
-						//iss.ImportPSModule(allModules);
-
-						// 2. 打开 Runspace
 						using var runspace = RunspaceFactory.CreateRunspace(iss);
 						runspace.Open();
 
@@ -341,7 +347,7 @@ internal class Agent
 
 							try
 							{
-								await connection.SendAsync("PowershellScriptCallback", callId, outputText);
+								await connection.SendAsync("PowershellScriptCallback", callId, outputText, stoppingToken);
 							}
 							catch (Exception sendEx)
 							{
@@ -457,114 +463,33 @@ internal class Agent
 					return true;
 				}
 
-				try
-				{
-					await connection.StartAsync();
-					Log.Debug("已连接到服务器...");
-					await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
-					Log.Debug("代理注册成功");
-				}
-				catch (Exception ex)
-				{
-					Log.Error(ex, $"连接失败：{ex.Message}");
-					Log.Debug("程序将继续运行，等待自动重连...");
-				}
-
-				// 添加连接状态监控循环
-				var cancellationTokenSource = new CancellationTokenSource();
-				var monitorTask = Task.Run(async () =>
+				while (!stoppingToken.IsCancellationRequested)
 				{
 					try
 					{
-						var consecutiveFailures = 0;
-						var maxConsecutiveFailures = 10; // 最大连续失败次数
-
-						while (!cancellationTokenSource.Token.IsCancellationRequested)
-						{
-							try
-							{
-								// 根据连续失败次数调整检查间隔
-								var checkInterval = consecutiveFailures > 5 ? 30000 : 5000; // 5秒或30秒
-								await Task.Delay(checkInterval, cancellationTokenSource.Token);
-
-								if (connection?.State == HubConnectionState.Disconnected)
-								{
-									Log.Warning($"检测到连接断开，尝试第{consecutiveFailures + 1}次重新连接...");
-									try
-									{
-										// 尝试重新建立连接
-										await connection.StartAsync();
-										await connection.InvokeAsync("RegisterAgent",
-											GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
-										Log.Information("手动重连成功");
-										consecutiveFailures = 0; // 重置失败计数
-									}
-									catch (Exception ex)
-									{
-										consecutiveFailures++;
-										Log.Warning($"第{consecutiveFailures}次重连失败: {ex.Message}");
-
-										// 如果连续失败次数过多，可能需要重新创建连接对象
-										if (consecutiveFailures >= maxConsecutiveFailures)
-										{
-											Log.Warning("连续重连失败次数过多，将触发Agent重启...");
-											cancellationTokenSource.Cancel(); // 触发Agent重启
-											return;
-										}
-									}
-								}
-								else if (connection?.State == HubConnectionState.Connected)
-								{
-									// 连接正常，重置失败计数
-									if (consecutiveFailures > 0)
-									{
-										Log.Information("连接已恢复正常");
-										consecutiveFailures = 0;
-									}
-								}
-								else if (connection?.State == HubConnectionState.Connecting ||
-										 connection?.State == HubConnectionState.Reconnecting)
-								{
-									// 正在连接中，不做额外操作，但记录状态
-									Log.Debug($"连接状态: {connection?.State}");
-								}
-							}
-							catch (TaskCanceledException)
-							{
-								break;
-							}
-							catch (Exception ex)
-							{
-								consecutiveFailures++;
-								Log.Error(ex, $"连接监控过程中发生错误 (第{consecutiveFailures}次): {ex.Message}");
-
-								// 如果监控过程本身出现太多异常，也触发重启
-								if (consecutiveFailures >= maxConsecutiveFailures)
-								{
-									Log.Error("连接监控异常次数过多，将触发Agent重启...");
-									cancellationTokenSource.Cancel();
-									return;
-								}
-							}
-						}
+						Log.Debug($"尝试连接到服务器: {serverUrl}");
+						await connection.StartAsync(stoppingToken);
+						Log.Information("已连接到服务器...");
+						await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group, stoppingToken);
+						Log.Information("代理注册成功");
+						break;
 					}
 					catch (Exception ex)
 					{
-						Log.Error(ex, $"连接监控任务异常退出: {ex.Message}");
+						Log.Error($"连接失败：{ex.Message}");
+						await Task.Delay(5000);
 					}
-				}, cancellationTokenSource.Token);
+				}
 
-				Log.Information("代理服务已启动，持续运行中...");
+				Log.Information("Agent服务已启动，持续运行中...");
 
 				try
 				{
 					// 持续运行，直到发生异常或被取消
-					await Task.Delay(Timeout.Infinite, cancellationTokenSource.Token);
+					await Task.Delay(Timeout.Infinite, stoppingToken);
 				}
 				catch (TaskCanceledException)
 				{
-					Log.Warning("Agent服务被取消，准备重启...");
-					throw; // 抛出异常，触发外层重启逻辑
 				}
 				catch (Exception ex)
 				{
@@ -575,10 +500,9 @@ internal class Agent
 				{
 					try
 					{
-						cancellationTokenSource.Cancel();
 						if (connection != null)
 						{
-							await connection.StopAsync();
+							await connection.StopAsync(stoppingToken);
 							await connection.DisposeAsync();
 						}
 					}
@@ -593,7 +517,6 @@ internal class Agent
 			{
 				Log.Error(ex, $"Agent服务异常: {ex.Message}");
 				Log.Warning("5秒后将重新启动Agent服务...");
-
 				try
 				{
 					if (connection != null)
@@ -605,47 +528,11 @@ internal class Agent
 				{
 					Log.Error(disposeEx, $"清理连接资源失败: {disposeEx.Message}");
 				}
-
-				try
-				{
-					await Task.Delay(5000); // 等待5秒后重试
-				}
-				catch (Exception delayEx)
-				{
-					Log.Error(delayEx, $"延时等待异常: {delayEx.Message}");
-				}
-
-				// 继续循环，重新启动Agent
+				await Task.Delay(5000, stoppingToken); // 等待5秒后重试
+													   // 继续循环，重新启动Agent
 			}
 		}
 	}
-
-	//PowerShell CreatePowerShell()
-	//{
-	//	var iss = InitialSessionState.CreateDefault();
-	//	iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
-
-	//	// 把当前机器所有模块目录下的 *.psd1 一次性塞进列表
-	//	//var allDirs = Environment.GetEnvironmentVariable("PSModulePath").Split(';');
-	//	//var allModules = allDirs
-	//	//				 .Where(Directory.Exists)
-	//	//				 .SelectMany(Directory.EnumerateDirectories)
-	//	//				 .SelectMany(d => Directory.EnumerateFiles(d, "*.psd1"))
-	//	//				 .Select(Path.GetFileNameWithoutExtension)
-	//	//				 .Distinct(StringComparer.OrdinalIgnoreCase)
-	//	//				 .ToArray();
-
-	//	//iss.ImportPSModule(allModules);
-
-	//	// 2. 打开 Runspace
-	//	using var runspace = RunspaceFactory.CreateRunspace(iss);
-	//	runspace.Open();
-
-	//	// 3. 正常跑脚本
-	//	var ps = PowerShell.Create();
-	//	ps.Runspace = runspace;
-	//	return ps;
-	//}
 
 	/// <summary>
 	/// 返回本机第一个能出网的 IPv4 地址（跳过回环、隧道、虚拟网卡）。

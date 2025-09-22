@@ -1,4 +1,5 @@
 ﻿﻿﻿﻿﻿using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.SignalR;
 
 namespace AgentServer
@@ -42,8 +43,24 @@ namespace AgentServer
 			return agent;
 		}
 
-		public async Task<string> ExecutePowershellScript(string agentId, string script)
+		string GetAgentIdByDTO(DTOBase dto)
 		{
+			var agentId = dto.AgentId;
+			if (agentId == null)
+			{
+				if (dto.Serial == null)
+					throw new Exception("AgentId和Serial不能同时为空");
+				var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
+				if (agent == null)
+					throw new Exception("未找到对应的Agent");
+				agentId = agent.AgentId;
+			}
+			return agentId;
+		}
+
+		public async Task<string> ExecutePowershellScript(ExecuteDTO dto, string script)
+		{
+			var agentId = GetAgentIdByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_scriptCallbacks.TryAdd(requestId, tcs);
@@ -74,8 +91,9 @@ namespace AgentServer
 			}
 		}
 
-		public async Task<byte[]> CaptureScreen(string agentId)
+		public async Task<byte[]> CaptureScreen(ScreenDTO dto)
 		{
+			var agentId = GetAgentIdByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<byte[]>();
 			_captureCallbacks.TryAdd(requestId, tcs);
@@ -104,8 +122,9 @@ namespace AgentServer
 			}
 		}
 
-		public async Task<string> RemoteDesk(string agentId, string server, string key)
+		public async Task<string> RemoteDesk(RemoteDeskDTO dto, string server, string key)
 		{
+			var agentId = GetAgentIdByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_remoteDeskCallbacks.TryAdd(requestId, tcs);

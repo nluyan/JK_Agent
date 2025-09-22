@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Data;
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -85,8 +86,7 @@ namespace AgentClient
 			}
 			catch (TimeoutException)
 			{
-				Console.WriteLine("Error: Connection to RustDesk IPC timed out.");
-				Console.WriteLine("Please ensure the main RustDesk application is running.");
+				Log.Error("Error: Connection to RustDesk IPC timed out.");
 				return null;
 			}
 
@@ -135,12 +135,12 @@ namespace AgentClient
 			}
 			catch (OperationCanceledException)
 			{
-				Console.WriteLine("Error: Timed out waiting for a response from RustDesk.");
+				Log.Error("Error: Timed out waiting for a response from RustDesk.");
 				return null;
 			}
 			catch (EndOfStreamException)
 			{
-				Console.WriteLine("Error: The IPC pipe was closed unexpectedly while reading the response.");
+				Log.Error("Error: The IPC pipe was closed unexpectedly while reading the response.");
 				return null;
 			}
 		}
@@ -155,8 +155,8 @@ namespace AgentClient
 			}
 			catch (TimeoutException)
 			{
-				Console.WriteLine("Error: Connection to RustDesk IPC timed out.");
-				Console.WriteLine("Please ensure the main RustDesk application is running.");
+				Log.Error("Error: Connection to RustDesk IPC timed out.");
+				Log.Error("Please ensure the main RustDesk application is running.");
 			}
 
 			using var cts = new CancellationTokenSource(timeoutMs);
@@ -228,8 +228,10 @@ namespace AgentClient
 		/// <returns>A ConnectionStatus object containing detailed connection information, or null if the request failed.</returns>
 		public async Task<ConnectionStatus?> GetConnectionStatusAsync()
 		{
+			Log.Debug("发送连接获取在线状态");
 			var response = await SendRequestAsync(new { t = "OnlineStatus" });
 			var content = response?["c"];
+			Log.Debug("收到返回值：" + content.ToString());
 
 			if (content is JsonArray arr && arr.Count == 2)
 			{
@@ -347,24 +349,27 @@ namespace AgentClient
 			while (true)
 			{
 				var status = await client.GetConnectionStatusAsync();
+				Log.Debug($"获取到返回状态：{status.StatusNum} {status.StatusDescription}");
 				if (status != null)
 				{
 					if (status.StatusNum > 0) //没有连接上服务器
 					{
+						Log.Debug("开始获取Id和Password");
 						var id = await client.GetIdAsync();
 						var pwd = await client.GetTemporaryPasswordAsync();
-						Log.Debug("执行成功");
+						Log.Debug($"获取到Id：{id} Pwd:{pwd}");
 						return id + "," + pwd;
 					}
 					else if (status.StatusNum <= 0)
 					{
-						Log.Debug("设置服务器");
+						Log.Debug($"开始设置服务器 {server} {key}");
 						await client.SetOptionsAsync(new Dictionary<string, string>
-									{
-										{ "custom-rendezvous-server", server },
-										{ "key", key }
-									});
-						await Task.Delay(2000);
+						{
+							{ "custom-rendezvous-server", server },
+							{ "key", key }
+						});
+						Log.Debug("服务器设置完成");
+						await Task.Delay(3000);
 					}
 					else
 					{
@@ -372,12 +377,12 @@ namespace AgentClient
 						await Task.Delay(1000);
 					}
 				}
-				else //没有启动
+				else
 				{
-					Log.Debug("启动rustdesk");
+					Log.Debug("找不到RustDesk进程，启动rustdesk");
 					var process = Process.Start(new ProcessStartInfo
 					{
-						FileName = "rd.exe",
+						FileName = "RustDesk.exe",
 						Arguments = "--server",
 						UseShellExecute = true,
 						CreateNoWindow = true,
@@ -385,6 +390,7 @@ namespace AgentClient
 						WindowStyle = ProcessWindowStyle.Hidden
 					});
 					await process.WaitForExitAsync();
+					await Task.Delay(2000);
 				}
 			}
 		}

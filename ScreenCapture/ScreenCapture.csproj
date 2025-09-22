@@ -4,10 +4,10 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{31F23994-69F8-47BB-A445-C3823DC52917}</ProjectGuid>
+    <ProjectGuid>{FC1EA916-2FE5-447F-B67A-3A7C176B062C}</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>JikeStarter</RootNamespace>
-    <AssemblyName>JikeStarter</AssemblyName>
+    <RootNamespace>ScreenCapture</RootNamespace>
+    <AssemblyName>ScreenCapture</AssemblyName>
     <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -35,6 +35,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />

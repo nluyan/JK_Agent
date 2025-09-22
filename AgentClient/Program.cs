@@ -1,5 +1,10 @@
-﻿using AgentClient;
+﻿﻿using AgentClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Logging;
 using Microsoft.PowerShell;
+using Microsoft.Win32;
 using Serilog;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -8,193 +13,92 @@ using System.Management.Automation.Runspaces;
 using System.Reflection;
 using System.Text.Json.Nodes;
 
+//删除老版本
+foreach(var p in Process.GetProcessesByName("AgentClient"))
+{
+	if (p.Id != Process.GetCurrentProcess().Id)
+	{
+		p.Kill();
+	}
+}
+DeleteRegisterTable();
 
-//AutoStart.SetAutoStart();
-//if (args.Length == 0)
-//{
-//	StartUpdater();
-//	return;
-//}
+// 设置工作目录为应用程序基础目录
+var baseDirectory = AppContext.BaseDirectory;
+Directory.SetCurrentDirectory(baseDirectory);
 
-// 1. 一步到位配置
+// 创建日志目录
+var logDirectory = Path.Combine(baseDirectory, "logs");
+Directory.CreateDirectory(logDirectory);
+
 Log.Logger = new LoggerConfiguration()
 	//.MinimumLevel.Information()
 	.MinimumLevel.Debug()
-	.WriteTo.File("logs\\client_log-.txt", rollingInterval: RollingInterval.Month) // 每月一个文件
-	.WriteTo.Console() // 同时输出到控制台
+	.WriteTo.File(Path.Combine(logDirectory, "client_log-.txt"), rollingInterval: RollingInterval.Month) // 每月一个文件
+	.WriteTo.Console() // 同时输出到控制台（仅调试模式下可见）
 	.CreateLogger();
+
+Log.Information($"应用程序启动，基础目录: {baseDirectory}");
+Log.Information($"当前用户: {Environment.UserName}");
+Log.Information($"操作系统: {Environment.OSVersion}");
+Log.Information($"当前版本: {Settings.Version}");
 
 // 添加全局异常处理器
 AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
 {
-	Log.Debug($"未处理的异常: {e.ExceptionObject}");
-	Log.Debug("程序将继续尝试运行...");
+	Log.Error($"未处理的异常: {e.ExceptionObject}");
 };
 
 TaskScheduler.UnobservedTaskException += (sender, e) =>
 {
-	Log.Debug($"未观察到的任务异常: {e.Exception}");
-	e.SetObserved(); // 标记为已观察，防止程序崩溃
+	Log.Error(e.Exception, $"未观察到的任务异常: {e.Exception}");
+	e.SetObserved();
 };
 
-Log.Debug("正在启动应用程序...");
-var settings = File.ReadAllText("appsettings.json");
-var node = JsonNode.Parse(settings);
-var serverUrl = node.Root["ServerUrl"].ToString();
-var group = node.Root["Group"].ToString();
+var builder = Host.CreateDefaultBuilder(args);
 
-if (string.IsNullOrEmpty(serverUrl))
+builder.ConfigureLogging(logging =>
 {
-	throw new InvalidOperationException("配置文件中的ServerUrl为空");
-}
-if (string.IsNullOrEmpty(group))
+	logging.ClearProviders();
+});
+builder.UseSerilog();
+builder.UseWindowsService(options =>
 {
-	throw new InvalidOperationException("配置文件中的Group为空");
-}
+	options.ServiceName = "JikeAgent";
+});
 
-// 启动时检查一次更新
-await CheckAndUpdate(serverUrl);
-
-// 主程序无限循环，确保程序永不退出
-while (true)
+builder.ConfigureServices(services =>
 {
+	services.AddHostedService<Worker>();
+});
+
+IHost host = builder.Build();
+host.Run();
+
+
+void DeleteRegisterTable()
+{
+	const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+	const string valueName = "JK_Agent_Client";
+
 	try
 	{
-		// 创建取消令牌源用于控制所有后台任务
-		var cancellationTokenSource = new CancellationTokenSource();
-
-		// 启动定期更新检查任务
-		var updateCheckTask = Task.Run(async () =>
+		// 打开 HKCU\...\Run 键，要求“可写”
+		using (RegistryKey runKey = Registry.CurrentUser.OpenSubKey(keyPath, true))
 		{
-			var updateCheckInterval = TimeSpan.FromMinutes(10); // 10分钟检查一次
-			Log.Debug($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
-
-			while (!cancellationTokenSource.Token.IsCancellationRequested)
+			// 判断值是否存在
+			if (runKey.GetValue(valueName) == null)
 			{
-				try
-				{
-					await Task.Delay(updateCheckInterval, cancellationTokenSource.Token);
-					Log.Debug("执行定期更新检查...");
-					await CheckAndUpdate(serverUrl);
-				}
-				catch (TaskCanceledException)
-				{
-					// 正常取消，忽略异常
-					break;
-				}
-				catch (Exception ex)
-				{
-					Log.Debug(ex, $"定期更新检查失败: {ex.Message}");
-					// 继续运行，不退出程序
-				}
+				Console.WriteLine("JK_Agent_Client 不存在，无需删除。");
 			}
-		}, cancellationTokenSource.Token);
-
-		// 启动 Agent 并持续运行
-		var agent = new Agent($"{serverUrl}/AgentHub", group);
-		await agent.Start();
-
-		// 如果代码执行到这里，说明Agent.Start()意外结束了
-		Log.Warning("Agent服务意外结束，程序将重新启动...");
-
-	}
-	catch (Exception ex)
-	{
-		Log.Error(ex, $"程序运行过程中发生错误: {ex.Message} 10秒后将重新启动程序...");
-		await Task.Delay(10000); // 等待10秒后重试
-	}
-}
-
-async Task CheckAndUpdate(string serverUrl)
-{
-	try
-	{
-		if (string.IsNullOrEmpty(serverUrl))
-		{
-			Log.Debug("ServerUrl为空，跳过更新检查");
-			return;
-		}
-
-		string remoteVersionUrl = $"{serverUrl}/update/{group}/version.txt";
-		using var httpClient = new HttpClient();
-		httpClient.Timeout = TimeSpan.FromSeconds(10); // 设置超时时间
-
-		string remoteVersion = (await httpClient.GetStringAsync(remoteVersionUrl)).Trim();
-
-		if (string.IsNullOrEmpty(remoteVersion))
-		{
-			Log.Debug("远程版本信息为空，跳过更新");
-			return;
-		}
-
-		if (new Version(remoteVersion) > new Version(Settings.Version))
-		{
-			Log.Information($"发现新版本: {remoteVersion}，当前版本: {Settings.Version} 开始下载更新...");
-
-			// 下载更新器和新版本
-			await DownloadFileAsync($"{serverUrl}/update/{group}/Updater.exe", "Updater.exe");
-			await DownloadFileAsync($"{serverUrl}/update/{group}/AgentClient.zip", "AgentClient.zip");
-			if(Directory.Exists("temp"))
-				Directory.Delete("temp", true);
-			ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
-
-			Log.Information("启动更新程序...");
-			// 启动 Updater（主程序退出）
-			StartUpdater();
-			Environment.Exit(0);
+			else
+			{
+				runKey.DeleteValue(valueName, false);   // false = 不抛异常（如果刚被别的进程删了）
+				Console.WriteLine("JK_Agent_Client 已成功删除。");
+			}
 		}
 	}
 	catch (Exception ex)
 	{
-		Log.Error(ex, $"更新检查失败: {ex.Message}");
-	}
-}
-
-void StartUpdater()
-{
-	try
-	{
-		Process.Start(new ProcessStartInfo
-		{
-			FileName = "Updater.exe",
-			UseShellExecute = true,
-			CreateNoWindow = true,
-			WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-			WindowStyle = ProcessWindowStyle.Hidden
-		});
-	}
-	catch { }
-}
-
-async Task DownloadFileAsync(string url, string filePath)
-{
-	try
-	{
-		if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(filePath))
-		{
-			throw new ArgumentException("URL或文件路径不能为空");
-		}
-
-		using var httpClient = new HttpClient();
-		httpClient.Timeout = TimeSpan.FromMinutes(10);
-		using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-		response.EnsureSuccessStatusCode();
-
-		var directory = Path.GetDirectoryName(filePath);
-		if (!string.IsNullOrEmpty(directory))
-		{
-			Directory.CreateDirectory(directory);
-		}
-
-		using var contentStream = await response.Content.ReadAsStreamAsync();
-		using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-		await contentStream.CopyToAsync(fileStream);
-
-		Log.Information($"文件下载成功: {filePath}");
-	}
-	catch (Exception ex)
-	{
-		Log.Error(ex, $"下载文件失败 {url} -> {filePath}: {ex.Message}");
-		throw; // 重新抛出异常，让上层处理
 	}
 }

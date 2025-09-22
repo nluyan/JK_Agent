@@ -28,7 +28,7 @@ namespace AgentServer.Pages
             {
                 try
                 {
-                    var imageData = await _agentService.CaptureScreen(agentId);
+                    var imageData = await _agentService.CaptureScreen(new ScreenDTO { AgentId = agentId });
                     return new FileContentResult(imageData, "image/jpg")
                     {
                         FileDownloadName = $"screenshot_{agentId}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"
@@ -48,7 +48,7 @@ namespace AgentServer.Pages
                     var server = configuration["RemoteDesk:Server"];
                     var key = configuration["RemoteDesk:Key"];
                     
-                    var result = await _agentService.RemoteDesk(agentId, server, key);
+                    var result = await _agentService.RemoteDesk(new RemoteDeskDTO { AgentId = agentId }, server, key);
                     return new JsonResult(new { success = true, data = result });
                 }
                 catch (Exception ex)

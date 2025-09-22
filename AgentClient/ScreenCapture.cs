@@ -1,77 +1,248 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Linq;
+using Serilog;
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace AgentClient
 {
-	internal static class ScreenCapture
-	{
-		public static byte[] Capture()
-		{
-			int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-			int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    internal static class ScreenCapture
+    {
+        public static void StartCapture()
+        {
+            uint sessionId = WTSGetActiveConsoleSessionId();
+            if (sessionId == 0xFFFFFFFF)
+            {
+                Log.Error("StartCapture: No active console session found.");
+                throw new InvalidOperationException("当前没有用户");
+            }
+            
+            IntPtr hImpersonationToken = IntPtr.Zero;
+            if (!WTSQueryUserToken((int)sessionId, out hImpersonationToken))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "WTSQueryUserToken 失败");
+            }
 
-			IntPtr hdcScreen = GetDC(IntPtr.Zero);
-			IntPtr hdcMem = CreateCompatibleDC(hdcScreen);
-			IntPtr hBitmap = CreateCompatibleBitmap(hdcScreen, screenWidth, screenHeight);
+            IntPtr hPrimaryToken = IntPtr.Zero;
+            IntPtr lpEnvironment = IntPtr.Zero;
+            PROCESS_INFORMATION pi = new PROCESS_INFORMATION();
+            try
+            {
+                var sa = new SECURITY_ATTRIBUTES();
+                sa.nLength = Marshal.SizeOf(sa);
 
-			SelectObject(hdcMem, hBitmap);
-			BitBlt(hdcMem, 0, 0, screenWidth, screenHeight,
-				   hdcScreen, 0, 0, SRCCOPY);
-			try
-			{
-				MemoryStream ms = new MemoryStream();
-				// 保存成文件
-				using (Bitmap bmp = Image.FromHbitmap(hBitmap))
-				{
-					bmp.Save(ms, ImageFormat.Jpeg);
-				}
-				return ms.ToArray();
-			}
-			finally
-			{
-				DeleteObject(hBitmap);
-				DeleteDC(hdcMem);
-				ReleaseDC(IntPtr.Zero, hdcScreen);
-			}
-		}
+                if (!DuplicateTokenEx(
+                    hImpersonationToken,
+                    (uint)TOKEN_ACCESS_LEVEL.MAXIMUM_ALLOWED,
+                    ref sa,
+                    (int)SECURITY_IMPERSONATION_LEVEL.SecurityIdentification,
+                    (int)TOKEN_TYPE.TokenPrimary,
+                    out hPrimaryToken))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "DuplicateTokenEx 失败");
+                }
 
-		// ====== P/Invoke 声明 ======
-		const int SM_CXSCREEN = 0;
-		const int SM_CYSCREEN = 1;
-		const uint SRCCOPY = 0x00CC0020;
+                if (!CreateEnvironmentBlock(out lpEnvironment, hPrimaryToken, false))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateEnvironmentBlock 失败");
+                }
 
-		[DllImport("user32.dll")]
-		static extern int GetSystemMetrics(int nIndex);
+                var si = new STARTUPINFO();
+                si.cb = Marshal.SizeOf(si);
+                si.lpDesktop = "winsta0\\default";
+                si.dwFlags = 0x00000001; // STARTF_USESHOWWINDOW
+                si.wShowWindow = 1;     // SW_SHOWNORMAL
 
-		[DllImport("user32.dll")]
-		static extern IntPtr GetDC(IntPtr hWnd);
+                string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                string helperPath = Path.Combine(exeDir, "ScreenCapture.exe");
 
-		[DllImport("user32.dll")]
-		static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+                if (!File.Exists(helperPath))
+                {
+                    Log.Error("截图助手程序不存在: " + helperPath);
+                    throw new FileNotFoundException("找不到 ScreenCapture.exe", helperPath);
+                }
 
-		[DllImport("gdi32.dll")]
-		static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+                Log.Debug("准备在用户会话 {sessionId} 中执行屏幕截图程序: {path}", sessionId, helperPath);
 
-		[DllImport("gdi32.dll")]
-		static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
+                int dwCreationFlags = 0 | 0x00000400; // CREATE_UNICODE_ENVIRONMENT
 
-		[DllImport("gdi32.dll")]
-		static extern IntPtr SelectObject(IntPtr hdc, IntPtr h);
+                bool ok = CreateProcessAsUser(
+                    hPrimaryToken,
+                    null,
+                    helperPath,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    false,
+                    dwCreationFlags,
+                    lpEnvironment,
+                    exeDir,
+                    ref si,
+                    out pi);
 
-		[DllImport("gdi32.dll")]
-		static extern bool BitBlt(IntPtr hdcDest, int xDest, int yDest, int w, int h,
-								  IntPtr hdcSrc, int xSrc, int ySrc, uint rop);
+                if (!ok)
+                {
+                    int errorCode = Marshal.GetLastWin32Error();
+                    Log.Error("CreateProcessAsUser 失败，错误码: {errorCode}", errorCode);
+                    throw new Win32Exception(errorCode);
+                }
 
-		[DllImport("gdi32.dll")]
-		static extern bool DeleteObject(IntPtr ho);
+                Log.Information("成功创建 ScreenCapture.exe 进程, Process ID: {pid}. 等待其初始化...", pi.dwProcessId);
 
-		[DllImport("gdi32.dll")]
-		static extern bool DeleteDC(IntPtr hdc);
-	}
+                // 等待2秒，看进程是否意外退出
+                uint waitResult = WaitForSingleObject(pi.hProcess, 2000);
+                if (waitResult == 0x00000000) // WAIT_OBJECT_0, 进程已终止
+                {
+                    uint exitCode;
+                    if (GetExitCodeProcess(pi.hProcess, out exitCode))
+                    {
+                        Log.Error("ScreenCapture.exe 进程在启动后迅速退出，退出代码: {exitCode} (十进制) / 0x{exitCode:X}", exitCode, exitCode);
+                    }
+                    else
+                    {
+                        Log.Error("ScreenCapture.exe 进程在启动后迅速退出，但无法获取其退出代码。");
+                    }
+                }
+                else if (waitResult == 0x00000102) // WAIT_TIMEOUT
+                {
+                    Log.Information("ScreenCapture.exe 进程在2秒后仍在运行，可能已成功启动。");
+                }
+            }
+            finally
+            {
+                if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
+                if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
+                if (lpEnvironment != IntPtr.Zero) DestroyEnvironmentBlock(lpEnvironment);
+                if (hPrimaryToken != IntPtr.Zero) CloseHandle(hPrimaryToken);
+                if (hImpersonationToken != IntPtr.Zero) CloseHandle(hImpersonationToken);
+            }
+        }
+
+        #region P/Invoke Definitions
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct STARTUPINFO
+        {
+            public int cb;
+            public string lpReserved;
+            public string lpDesktop;
+            public string lpTitle;
+            public int dwX;
+            public int dwY;
+            public int dwXSize;
+            public int dwYSize;
+            public int dwXCountChars;
+            public int dwYCountChars;
+            public int dwFillAttribute;
+            public int dwFlags;
+            public short wShowWindow;
+            public short cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SECURITY_ATTRIBUTES
+        {
+            public int nLength;
+            public IntPtr lpSecurityDescriptor;
+            public bool bInheritHandle;
+        }
+
+        private enum TOKEN_TYPE
+        {
+            TokenPrimary = 1,
+            TokenImpersonation = 2
+        }
+
+        private enum SECURITY_IMPERSONATION_LEVEL
+        {
+            SecurityAnonymous = 0,
+            SecurityIdentification = 1,
+            SecurityImpersonation = 2,
+            SecurityDelegation = 3
+        }
+
+        [Flags]
+        private enum TOKEN_ACCESS_LEVEL : uint
+        {
+            STANDARD_RIGHTS_REQUIRED = 0x000F0000,
+            STANDARD_RIGHTS_READ = 0x00020000,
+            TOKEN_ASSIGN_PRIMARY = 0x0001,
+            TOKEN_DUPLICATE = 0x0002,
+            TOKEN_IMPERSONATE = 0x0004,
+            TOKEN_QUERY = 0x0008,
+            TOKEN_QUERY_SOURCE = 0x0010,
+            TOKEN_ADJUST_PRIVILEGES = 0x0020,
+            TOKEN_ADJUST_GROUPS = 0x0040,
+            TOKEN_ADJUST_DEFAULT = 0x0080,
+            TOKEN_ADJUST_SESSIONID = 0x0100,
+            TOKEN_READ = (STANDARD_RIGHTS_READ | TOKEN_QUERY),
+            TOKEN_ALL_ACCESS = (STANDARD_RIGHTS_REQUIRED | TOKEN_ASSIGN_PRIMARY |
+                TOKEN_DUPLICATE | TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_QUERY_SOURCE |
+                TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_GROUPS | TOKEN_ADJUST_DEFAULT |
+                TOKEN_ADJUST_SESSIONID),
+            MAXIMUM_ALLOWED = 0x02000000
+        }
+
+        [DllImport("kernel32.dll", SetLastError = false)]
+        private static extern uint WTSGetActiveConsoleSessionId();
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        private static extern bool WTSQueryUserToken(int sessionId, out IntPtr phToken);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool CreateProcessAsUser(
+            IntPtr hToken,
+            string lpApplicationName,
+            string lpCommandLine,
+            IntPtr lpProcessAttributes,
+            IntPtr lpThreadAttributes,
+            bool bInheritHandles,
+            int dwCreationFlags,
+            IntPtr lpEnvironment,
+            string lpCurrentDirectory,
+            ref STARTUPINFO lpStartupInfo,
+            out PROCESS_INFORMATION lpProcessInformation);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool DuplicateTokenEx(
+            IntPtr hExistingToken,
+            uint dwDesiredAccess,
+            ref SECURITY_ATTRIBUTES lpTokenAttributes,
+            int ImpersonationLevel,
+            int TokenType,
+            out IntPtr phNewToken);
+
+        [DllImport("userenv.dll", SetLastError = true)]
+        private static extern bool CreateEnvironmentBlock(out IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
+
+        [DllImport("userenv.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
+
+        #endregion
+    }
 }

@@ -12,10 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="reg.reg" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="wwwroot\update\jike\version.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

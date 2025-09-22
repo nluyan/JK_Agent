@@ -78,7 +78,7 @@ namespace AgentServer.Pages
             {
                 Console.WriteLine($"Executing script for Agent {Id}: {ScriptContent.Substring(0, Math.Min(50, ScriptContent.Length))}...");
                 IsExecuting = true;
-                ExecutionResult = await _agentService.ExecutePowershellScript(Id, ScriptContent);
+                ExecutionResult = await _agentService.ExecutePowershellScript(new ExecuteDTO { AgentId = Id }, ScriptContent);
                 ErrorMessage = null;
                 Console.WriteLine($"Script execution completed. Result length: {ExecutionResult?.Length ?? 0}");
             }

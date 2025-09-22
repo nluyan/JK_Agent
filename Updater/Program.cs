@@ -10,45 +10,39 @@ namespace Updater
 {
 	internal class Program
 	{
-		static void Main(string[] args)
+		static async Task Main(string[] args)
 		{
+			var baseDirectory = AppContext.BaseDirectory;
+			Directory.SetCurrentDirectory(baseDirectory);
+			File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), $"{DateTime.Now.ToString()} 启动更新...\n");
 			try
 			{
-				foreach (var process in Process.GetProcessesByName("AgentClient"))
-				{
-					try
-					{
-						var fileInfo = new FileInfo(process.MainModule.FileName);
-						//Todo：判断一下是自己的应用，避免误杀别的同名进程
-						if (File.Exists(Path.Combine(fileInfo.DirectoryName, "appsettings.json")))
-							process.Kill();
-					}
-					catch { }
-				}
-
 				if (Directory.Exists("temp"))
 				{
-					CopyDirectory(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp"), AppDomain.CurrentDomain.BaseDirectory);
-					Directory.Delete("temp", true);
+					ServiceHelper.StopService("JikeAgent");
+					await Task.Delay(3000);
+
+					foreach (var process in Process.GetProcessesByName("AgentClient"))
+					{
+						try
+						{
+							process.Kill();
+						}
+						catch { }
+					}
+
+					CopyDirectory(Path.Combine(baseDirectory, "temp"), baseDirectory);
 				}
-
-				if (File.Exists("AgentClient.zip"))
-					File.Delete("AgentClient.zip");
-
-				// 启动新版本
-				Process.Start(new ProcessStartInfo
-				{
-					FileName = "AgentClient.exe",
-					Arguments = "run",
-					UseShellExecute = true,
-					CreateNoWindow = true,
-					WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-					WindowStyle = ProcessWindowStyle.Hidden
-				});
+				else
+					throw new Exception("没有找到临时更新文件夹");
 			}
 			catch(Exception ex)
 			{
-				File.WriteAllText("update_log.txt", ex.Message);
+				File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), ex.Message + "\n");
+			}
+			finally
+			{
+				ServiceHelper.StartService("JikeAgent");
 			}
 		}
 
@@ -82,7 +76,10 @@ namespace Updater
 				{
 					file.CopyTo(dstFile.FullName, overwrite);
 				}
-				catch { }
+				catch(Exception ex)
+				{
+					File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), ex.Message + "\n");
+				}
 			}
 
 			// 再递归子目录
