@@ -391,7 +391,6 @@ internal class Agent
 						byte[] hash = MD5.HashData(bytes);
 						return Convert.ToHexString(hash).ToLowerInvariant();
 					}
-						
 				}
 
 				string? GetFirstPhysicalMac()
@@ -419,10 +418,6 @@ internal class Agent
 					return null;
 				}
 
-				/// <summary>
-				/// 获取主板序列号。
-				/// 如果拿不到有效值，返回 null。
-				/// </summary>
 				string? GetBoardSerials()
 				{
 					try
@@ -456,7 +451,6 @@ internal class Agent
 							return false;
 					}
 
-					// 再兜底：全是 0、空格、下划线也扔掉
 					if (sn.Replace("0", "").Replace("_", "").Replace(" ", "").Length == 0)
 						return false;
 

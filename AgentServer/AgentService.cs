@@ -45,15 +45,25 @@ namespace AgentServer
 
 		string GetAgentIdByDTO(DTOBase dto)
 		{
+			if(string.IsNullOrWhiteSpace(dto.AgentId) && string.IsNullOrWhiteSpace(dto.Serial) && string.IsNullOrWhiteSpace(dto.Ip))
+				throw new Exception("AgentId, Serial, IP不能同时为空");
 			var agentId = dto.AgentId;
 			if (agentId == null)
 			{
-				if (dto.Serial == null)
-					throw new Exception("AgentId和Serial不能同时为空");
-				var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
-				if (agent == null)
-					throw new Exception("未找到对应的Agent");
-				agentId = agent.AgentId;
+				if (!string.IsNullOrWhiteSpace(dto.Serial))
+				{
+					var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
+					if (agent == null)
+						throw new Exception("未找到对应的Agent");
+					agentId = agent.AgentId;
+				}
+				else if(!string.IsNullOrWhiteSpace(dto.Ip))
+				{
+					var agent = agents.Values.Where(c => c.IpAddress == dto.Ip).FirstOrDefault();
+					if (agent == null)
+						throw new Exception("未找到对应的Agent");
+					agentId = agent.AgentId;
+				}
 			}
 			return agentId;
 		}

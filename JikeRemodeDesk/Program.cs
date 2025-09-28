@@ -21,20 +21,38 @@ namespace JikeStarter
 			}
 			else
 			{
-				var match = Regex.Match(args[0], "jike://remotedesk/(?<id>\\d+)/(?<pwd>.*)");
-				if (match.Success)
+				if (args[0].StartsWith("jike://remotedesk"))
 				{
-					var id = match.Groups["id"].Value;
-					var pwd = match.Groups["pwd"].Value;
-					Process.Start(new ProcessStartInfo 
+					var match = Regex.Match(args[0], @"jike://remotedesk/(?<id>\d+)/?(?<pwd>.*)");
+					if (match.Success)
 					{
-						WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-						FileName = "rd.exe",
-						Arguments = $"--connect {id} {pwd}",
-						UseShellExecute = false,
-					});
+						var id = match.Groups["id"].Value;
+						var pwd = match.Groups["pwd"].Value;
+						Process.Start(new ProcessStartInfo
+						{
+							WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+							FileName = "remotedesk.exe",
+							Arguments = $"--connect {id} {pwd}".TrimEnd(),
+							UseShellExecute = false,
+						});
+					}
 				}
-				
+				else if (args[0].StartsWith("jike://filetransfer"))
+				{
+					var match = Regex.Match(args[0], @"jike://filetransfer/(?<id>\d+)/?(?<pwd>.*)");
+					if (match.Success)
+					{
+						var id = match.Groups["id"].Value;
+						var pwd = match.Groups["pwd"].Value;
+						Process.Start(new ProcessStartInfo
+						{
+							WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+							FileName = "remotedesk.exe",
+							Arguments = $"--file-transfer {id} {pwd}".TrimEnd(),
+							UseShellExecute = false,
+						});
+					}
+				}
 			}
 		}
 
