@@ -1,4 +1,5 @@
 ﻿﻿﻿﻿﻿using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.SignalR;
 
@@ -54,14 +55,14 @@ namespace AgentServer
 				{
 					var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
 					if (agent == null)
-						throw new Exception("未找到对应的Agent");
+						throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
 					agentId = agent.AgentId;
 				}
 				else if(!string.IsNullOrWhiteSpace(dto.Ip))
 				{
-					var agent = agents.Values.Where(c => c.IpAddress == dto.Ip).FirstOrDefault();
+					var agent = agents.Values.Where(c => c.IpAddress.Contains(dto.Ip)).FirstOrDefault();
 					if (agent == null)
-						throw new Exception("未找到对应的Agent");
+						throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
 					agentId = agent.AgentId;
 				}
 			}

@@ -80,7 +80,8 @@ internal class Agent
 								await connection.InvokeAsync("RegisterAgent",
 									GetUniqeId(),
 									Settings.Version,
-									GetFirstIpv4(), group);
+									GetFirstIpv4(), 
+									group);
 								Log.Information("立即重连成功");
 							}
 						}
@@ -528,18 +529,15 @@ internal class Agent
 		}
 	}
 
-	/// <summary>
-	/// 返回本机第一个能出网的 IPv4 地址（跳过回环、隧道、虚拟网卡）。
-	/// 如果本机没有插网线 / Wi-Fi 没连，会抛异常。
-	/// </summary>
 	public string GetFirstIpv4()
 	{
 		try
 		{
-			return Dns.GetHostEntry(Dns.GetHostName())          // 先拿本机主机名
+			return string.Join(',', Dns.GetHostEntry(Dns.GetHostName())
 					  .AddressList
-					  .First(ip => ip.AddressFamily == AddressFamily.InterNetwork
-								&& !IPAddress.IsLoopback(ip)).ToString();   // 过滤 IPv4 且非 127.x
+					  .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork
+								&& !IPAddress.IsLoopback(ip))
+					  .Select(c => c.ToString()));   // 过滤 IPv4 且非 127.x
 		}
 		catch
 		{

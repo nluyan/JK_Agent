@@ -3,10 +3,26 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.JSInterop.Infrastructure;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+	serverOptions.ListenAnyIP(int.Parse(builder.Configuration["Port:Http"]));
+	serverOptions.ListenAnyIP(int.Parse(builder.Configuration["Port:Https"]), listenOptions => listenOptions.UseHttps(c =>
+	{
+		c.ServerCertificateSelector = (connectionContext, host) =>
+		{
+			var cert = Convert.FromBase64String(builder.Configuration["HttpsCert:Data"]);
+			var password = builder.Configuration["HttpsCert:Password"];
+			return new X509Certificate2(cert, password);
+		};
+	}));
+	serverOptions.Limits.MaxRequestBodySize = 100 * 1024 * 1024;
+});
 
 builder.Services.AddRazorPages();
 builder.Services.AddSignalR(o =>

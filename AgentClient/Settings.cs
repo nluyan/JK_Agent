@@ -6,5 +6,5 @@ using System.Threading.Tasks;
 
 internal class Settings
 {
-	public const string Version = "2.2";
+	public const string Version = "2.3";
 }
