@@ -14,14 +14,16 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 
 //删除老版本
-foreach(var p in Process.GetProcessesByName("AgentClient"))
-{
-	if (p.Id != Process.GetCurrentProcess().Id)
-	{
-		p.Kill();
-	}
-}
-DeleteRegisterTable();
+//foreach(var p in Process.GetProcessesByName("AgentClient"))
+//{
+//	if (p.Id != Process.GetCurrentProcess().Id)
+//	{
+//		p.Kill();
+//	}
+//}
+//DeleteRegisterTable();
+
+Console.WriteLine("Jike Agent 客户端启动中...");
 
 // 设置工作目录为应用程序基础目录
 var baseDirectory = AppContext.BaseDirectory;
@@ -76,29 +78,29 @@ IHost host = builder.Build();
 host.Run();
 
 
-void DeleteRegisterTable()
-{
-	const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-	const string valueName = "JK_Agent_Client";
+//void DeleteRegisterTable()
+//{
+//	const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+//	const string valueName = "JK_Agent_Client";
 
-	try
-	{
-		// 打开 HKCU\...\Run 键，要求“可写”
-		using (RegistryKey runKey = Registry.CurrentUser.OpenSubKey(keyPath, true))
-		{
-			// 判断值是否存在
-			if (runKey.GetValue(valueName) == null)
-			{
-				Console.WriteLine("JK_Agent_Client 不存在，无需删除。");
-			}
-			else
-			{
-				runKey.DeleteValue(valueName, false);   // false = 不抛异常（如果刚被别的进程删了）
-				Console.WriteLine("JK_Agent_Client 已成功删除。");
-			}
-		}
-	}
-	catch (Exception ex)
-	{
-	}
-}
+//	try
+//	{
+//		// 打开 HKCU\...\Run 键，要求“可写”
+//		using (RegistryKey runKey = Registry.CurrentUser.OpenSubKey(keyPath, true))
+//		{
+//			// 判断值是否存在
+//			if (runKey.GetValue(valueName) == null)
+//			{
+//				Console.WriteLine("JK_Agent_Client 不存在，无需删除。");
+//			}
+//			else
+//			{
+//				runKey.DeleteValue(valueName, false);   // false = 不抛异常（如果刚被别的进程删了）
+//				Console.WriteLine("JK_Agent_Client 已成功删除。");
+//			}
+//		}
+//	}
+//	catch (Exception ex)
+//	{
+//	}
+//}

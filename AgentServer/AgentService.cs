@@ -13,8 +13,11 @@ namespace AgentServer
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _captureCallbacks = new();
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _remoteDeskCallbacks = new();
 
-		public AgentService(IHubContext<AgentHub> hubContext)
+		IConfiguration config;
+
+		public AgentService(IHubContext<AgentHub> hubContext, IConfiguration config)
 		{
+			this.config = config;
 			_hubContext = hubContext;
 		}
 
@@ -22,6 +25,25 @@ namespace AgentServer
 		{
 			if (!agents.TryAdd(model.AgentId, model))
 				throw new Exception("添加Agent失败");
+			_ = Task.Run(async () =>
+			{
+				try
+				{
+					var apiUrl = config["cmdbApi"];
+					using var httpClient = new HttpClient();
+					var content = new StringContent(JsonSerializer.Serialize(new 
+					{
+						type = "Access",
+						deviceInfo = model
+					}), System.Text.Encoding.UTF8, "application/json");
+					var response = await httpClient.PostAsync(apiUrl, content);
+					response.EnsureSuccessStatusCode();
+				}
+				catch (Exception ex)
+				{
+					Console.WriteLine("注册Agent到CMDB失败: " + ex.Message);
+				}
+			});
 		}
 
 		public void Remove(string agentId)

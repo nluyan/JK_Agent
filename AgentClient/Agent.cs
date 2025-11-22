@@ -1,4 +1,4 @@
-﻿﻿using AgentClient;
+﻿using AgentClient;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.PowerShell;
@@ -12,9 +12,9 @@ using System.Management.Automation.Runspaces;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 
 internal class Agent
 {
@@ -23,17 +23,19 @@ internal class Agent
 	string serverUrl;
 	string group;
 
-	string[] InvalidMarkers =
-	{
-					"To be filled by O.E.M.",
-					"Default string",
-					"None",
-					"N/A",
-					"000000000000",
-					"Empty",
-					"System Serial Number",
-					"Base Board Serial Number"
-	};
+	public event EventHandler OnCheckUpdate;
+
+	//string[] InvalidMarkers =
+	//{
+	//				"To be filled by O.E.M.",
+	//				"Default string",
+	//				"None",
+	//				"N/A",
+	//				"000000000000",
+	//				"Empty",
+	//				"System Serial Number",
+	//				"Base Board Serial Number"
+	//};
 
 	public Agent(string url, string group)
 	{
@@ -77,12 +79,7 @@ internal class Agent
 							if (connection.State == HubConnectionState.Disconnected)
 							{
 								await connection.StartAsync();
-								await connection.InvokeAsync("RegisterAgent",
-									GetUniqeId(),
-									Settings.Version,
-									GetFirstIpv4(), 
-									group);
-								Log.Information("立即重连成功");
+								await RegisterClient();
 							}
 						}
 						catch (Exception ex)
@@ -104,8 +101,7 @@ internal class Agent
 					// 重连成功后重新注册代理
 					try
 					{
-						await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group);
-						Log.Debug("代理重新注册成功");
+						await RegisterClient();
 					}
 					catch (Exception ex)
 					{
@@ -131,7 +127,7 @@ internal class Agent
 							await connection.SendAsync("CaptureScreenCallback", requestId, Array.Empty<byte>());
 						}
 					}
-					catch(Exception ex)
+					catch (Exception ex)
 					{
 						Log.Error(ex, $"截屏失败: {ex.Message}");
 					}
@@ -170,6 +166,12 @@ internal class Agent
 					{
 						Log.Error(ex, $"关闭终端失败 {terminalId}: {ex.Message}");
 					}
+				});
+
+				connection.On("CheckUpdate", () =>
+				{
+					Log.Information("收到CheckUpdate请求");
+					OnCheckUpdate?.Invoke(this, EventArgs.Empty);
 				});
 
 				connection.On<string, string>("ExecutePowerShell", async (command, terminalId) =>
@@ -292,68 +294,81 @@ internal class Agent
 					Log.Information("收到ExecutePowershellScript请求");
 					try
 					{
+						string outputText = "执行结果为空。";
 						Log.Information("执行脚本:\n" + script);
-						var iss = InitialSessionState.CreateDefault();
-						iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
-						using var runspace = RunspaceFactory.CreateRunspace(iss);
-						runspace.Open();
-
-						using (var ps = PowerShell.Create())
+						StringReader sr = new StringReader(script);
+						var line = sr.ReadLine();
+						if (line.Contains("--native--"))
 						{
-							ps.Runspace = runspace;
-							ps.AddScript(script);
-							ps.AddCommand("Out-String").AddParameter("Stream");
-							var output = new StringBuilder();
-
-							try
+							outputText = ExecuteScriptNatively(sr.ReadToEnd());
+						}
+						else
+						{
+							var iss = InitialSessionState.CreateDefault();
+							if (OperatingSystem.IsWindows())
 							{
-								var results = await ps.InvokeAsync();
-								if (ps.Streams.Error.Count > 0)
+								iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
+							}
+							using var runspace = RunspaceFactory.CreateRunspace(iss);
+							runspace.Open();
+
+							using (var ps = PowerShell.Create())
+							{
+								ps.Runspace = runspace;
+								ps.AddScript(script);
+								ps.AddCommand("Out-String").AddParameter("Stream");
+								var output = new StringBuilder();
+
+								try
 								{
-									foreach (var error in ps.Streams.Error)
+									var results = await ps.InvokeAsync();
+									if (ps.Streams.Error.Count > 0)
 									{
-										output.AppendLine(error.ToString());
-									}
-								}
-								else
-								{
-									foreach (var item in results)
-									{
-										if (item != null)
+										foreach (var error in ps.Streams.Error)
 										{
-											var itemText = item.ToString();
-											if (!string.IsNullOrEmpty(itemText))
+											output.AppendLine(error.ToString());
+										}
+									}
+									else
+									{
+										foreach (var item in results)
+										{
+											if (item != null)
 											{
-												output.AppendLine(itemText);
+												var itemText = item.ToString();
+												if (!string.IsNullOrEmpty(itemText))
+												{
+													output.AppendLine(itemText);
+												}
 											}
 										}
 									}
 								}
-							}
-							catch (Exception ex)
-							{
-								Log.Error(ex, "Critical execution error: " + ex.Message);
-								output.AppendLine("Critical execution error: " + ex.Message);
-							}
+								catch (Exception ex)
+								{
+									Log.Error(ex, "Critical execution error: " + ex.Message);
+									output.AppendLine("Critical execution error: " + ex.Message);
+								}
 
-							var outputText = output.ToString();
-							Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
+								outputText = output.ToString();
+								Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
 
-							// 检查连接状态
-							if (connection?.State != HubConnectionState.Connected)
-							{
-								Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
-								return;
+								// 检查连接状态
+								if (connection?.State != HubConnectionState.Connected)
+								{
+									Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
+									return;
+								}
 							}
+						}
 
-							try
-							{
-								await connection.SendAsync("PowershellScriptCallback", callId, outputText, stoppingToken);
-							}
-							catch (Exception sendEx)
-							{
-								Log.Error(sendEx, $"发送PowerShell脚本结果失败: {sendEx.Message}");
-							}
+						try
+						{
+							await connection.SendAsync("PowershellScriptCallback", callId, outputText, stoppingToken);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, $"发送PowerShell脚本结果失败: {sendEx.Message}");
 						}
 					}
 					catch (Exception ex)
@@ -361,6 +376,107 @@ internal class Agent
 						Log.Error(ex, $"执行PowerShell脚本失败 {callId}: {ex.Message}");
 					}
 				});
+
+				string ExecuteScriptNatively(string script)
+				{
+					var tempDir = System.IO.Path.GetTempPath();
+					var fileId = Guid.NewGuid();
+					var scriptFile = fileId + ".ps1";
+					var scriptPath = System.IO.Path.Combine(tempDir, scriptFile);
+
+					var outPath = System.IO.Path.Combine(tempDir, fileId + ".out.txt");
+					var errPath = System.IO.Path.Combine(tempDir, fileId + ".err.txt");
+
+					var wrapperFile = fileId + ".wrapper.ps1";
+					var wrapperPath = System.IO.Path.Combine(tempDir, wrapperFile);
+
+					// 写入目标脚本（带 BOM 的 UTF-8）
+					System.IO.File.WriteAllText(scriptPath, script, new System.Text.UTF8Encoding(true));
+
+					static string EscapeForSingleQuotedPowerShell(string s) => s?.Replace("'", "''") ?? s;
+
+					// wrapper: 设置编码并将脚本的输出（包括 stderr）写入 outPath，以 UTF8 编码
+					var wrapperContent = $@"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+$OutputEncoding=[System.Text.Encoding]::UTF8
+try {{
+ & '{EscapeForSingleQuotedPowerShell(scriptPath)}'2>&1 | Out-File -FilePath '{EscapeForSingleQuotedPowerShell(outPath)}' -Encoding UTF8
+ exit $LASTEXITCODE
+}} catch {{
+ $_ | Out-File -FilePath '{EscapeForSingleQuotedPowerShell(errPath)}' -Encoding UTF8
+ exit1
+}}";
+
+					System.IO.File.WriteAllText(wrapperPath, wrapperContent, new System.Text.UTF8Encoding(true));
+
+					try
+					{
+						var startInfo = new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -ExecutionPolicy Bypass -File \"{wrapperPath}\"")
+						{
+							UseShellExecute = false,
+							CreateNoWindow = true,
+							WorkingDirectory = tempDir
+						};
+
+						using var proc = System.Diagnostics.Process.Start(startInfo);
+						if (proc == null)
+							return "无法启动 PowerShell进程。";
+
+						proc.WaitForExit();
+
+						byte[] ReadIfExists(string p) => System.IO.File.Exists(p) ? System.IO.File.ReadAllBytes(p) : Array.Empty<byte>();
+
+						var outBytes = ReadIfExists(outPath);
+						var errBytes = ReadIfExists(errPath);
+
+						string DecodeWithBomAndFallback(byte[] bytes)
+						{
+							if (bytes == null || bytes.Length == 0) return string.Empty;
+
+							// BOM checks
+							if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+								return System.Text.Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+							if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+								return System.Text.Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+							if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+								return System.Text.Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+
+							// Heuristic: many zero bytes -> likely UTF-16 LE
+							int zeroCount = 0;
+							for (int i = 0; i < bytes.Length; i++) if (bytes[i] == 0) zeroCount++;
+							if (zeroCount > bytes.Length / 4)
+							{
+								try { return System.Text.Encoding.Unicode.GetString(bytes); } catch { }
+							}
+
+							// Try UTF-8 first
+							var utf8 = System.Text.Encoding.UTF8.GetString(bytes);
+							if (!utf8.Contains('\uFFFD'))
+								return utf8;
+
+							// Fallback to ANSI (GBK / CP936)
+							try { return System.Text.Encoding.GetEncoding(936).GetString(bytes); } catch { return utf8; }
+						}
+
+						var output = DecodeWithBomAndFallback(outBytes);
+						var error = DecodeWithBomAndFallback(errBytes);
+
+						if (!string.IsNullOrEmpty(error))
+						{
+							if (string.IsNullOrEmpty(output)) return error;
+							return output + Environment.NewLine + error;
+						}
+
+						return output;
+					}
+					finally
+					{
+						try { if (System.IO.File.Exists(scriptPath)) System.IO.File.Delete(scriptPath); } catch { }
+						try { if (System.IO.File.Exists(wrapperPath)) System.IO.File.Delete(wrapperPath); } catch { }
+						try { if (System.IO.File.Exists(outPath)) System.IO.File.Delete(outPath); } catch { }
+						try { if (System.IO.File.Exists(errPath)) System.IO.File.Delete(errPath); } catch { }
+					}
+				}
+
 
 				string GetPowerShellPath(PowerShell ps)
 				{
@@ -383,15 +499,34 @@ internal class Agent
 				string GetUniqeId()
 				{
 					var mac = GetFirstPhysicalMac();
-					var board = GetBoardSerials();
-					if (mac == null && board == null)
+					//var board = GetBoardSerials();
+					if (mac == null)
 						return "None";
 					else
 					{
-						byte[] bytes = Encoding.UTF8.GetBytes($"{board}{mac}");
+						byte[] bytes = Encoding.UTF8.GetBytes($"{mac}");
 						byte[] hash = MD5.HashData(bytes);
 						return Convert.ToHexString(hash).ToLowerInvariant();
 					}
+				}
+
+				async Task RegisterClient()
+				{
+					int platform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 1 :
+						RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 2 :
+						RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? 3 : 0;
+					string osArch = RuntimeInformation.OSArchitecture.ToString();
+					string osDesc = RuntimeInformation.OSDescription;
+					await connection.InvokeAsync("RegisterAgent",
+						GetUniqeId(),
+						Settings.Version,
+						GetFirstIpv4(),
+						group,
+						platform,
+						osArch,
+						osDesc,
+						stoppingToken);
+					Log.Information("代理注册成功");
 				}
 
 				string? GetFirstPhysicalMac()
@@ -400,7 +535,7 @@ internal class Agent
 					{
 						var nic = NetworkInterface.GetAllNetworkInterfaces()
 									.OrderBy(n => n.GetPhysicalAddress().ToString() == "" ? 1 : 0)
-									.ThenBy(n => n.Id) 
+									.ThenBy(n => n.Id)
 									.FirstOrDefault(n =>
 										n.OperationalStatus == OperationalStatus.Up &&
 										n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
@@ -414,49 +549,49 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						
+
 					}
 					return null;
 				}
 
-				string? GetBoardSerials()
-				{
-					try
-					{
-						using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BaseBoard");
-						foreach (ManagementObject mo in searcher.Get())
-						{
-							var raw = mo["SerialNumber"]?.ToString();
-							if (IsValidSerial(raw))
-							{
-								return raw;
-							}
-						}
-					}
-					catch (Exception ex)
-					{
-					}
-					return null;   // 不再返回 string.Empty，区分“未获取”与“空值”
-				}
+				//string? GetBoardSerials()
+				//{
+				//	try
+				//	{
+				//		using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BaseBoard");
+				//		foreach (ManagementObject mo in searcher.Get())
+				//		{
+				//			var raw = mo["SerialNumber"]?.ToString();
+				//			if (IsValidSerial(raw))
+				//			{
+				//				return raw;
+				//			}
+				//		}
+				//	}
+				//	catch (Exception ex)
+				//	{
+				//	}
+				//	return null;   // 不再返回 string.Empty，区分“未获取”与“空值”
+				//}
 
-				bool IsValidSerial(string? sn)
-				{
-					if (string.IsNullOrWhiteSpace(sn))
-						return false;
+				//bool IsValidSerial(string? sn)
+				//{
+				//	if (string.IsNullOrWhiteSpace(sn))
+				//		return false;
 
-					sn = sn.Trim();
+				//	sn = sn.Trim();
 
-					foreach (var marker in InvalidMarkers)
-					{
-						if (sn.Equals(marker, StringComparison.OrdinalIgnoreCase))
-							return false;
-					}
+				//	foreach (var marker in InvalidMarkers)
+				//	{
+				//		if (sn.Equals(marker, StringComparison.OrdinalIgnoreCase))
+				//			return false;
+				//	}
 
-					if (sn.Replace("0", "").Replace("_", "").Replace(" ", "").Length == 0)
-						return false;
+				//	if (sn.Replace("0", "").Replace("_", "").Replace(" ", "").Length == 0)
+				//		return false;
 
-					return true;
-				}
+				//	return true;
+				//}
 
 				while (!stoppingToken.IsCancellationRequested)
 				{
@@ -465,8 +600,7 @@ internal class Agent
 						Log.Debug($"尝试连接到服务器: {serverUrl}");
 						await connection.StartAsync(stoppingToken);
 						Log.Information("已连接到服务器...");
-						await connection.InvokeAsync("RegisterAgent", GetUniqeId(), Settings.Version, GetFirstIpv4(), group, stoppingToken);
-						Log.Information("代理注册成功");
+						await RegisterClient();
 						break;
 					}
 					catch (Exception ex)

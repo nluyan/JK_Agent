@@ -10,6 +10,12 @@
 
 		public string Version { get; set; }
 
+		public int OSPlatform { get; set; }
+
+		public string OSDescription { get; set; }
+
+		public string OSArchitecture { get; set; }
+
 		public string Group { get; set; }
 	}
 }

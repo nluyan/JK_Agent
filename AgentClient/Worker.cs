@@ -83,11 +83,23 @@ namespace AgentClient
 			}, stoppingToken);
 
 			var agent = new Agent($"{serverUrl}/AgentHub", group);
+			agent.OnCheckUpdate += async (s, e) =>
+			{
+				Log.Debug("收到手动更新检查请求...");
+				await CheckAndUpdate(serverUrl);
+			};
 			await agent.Start(stoppingToken);
 		}
 
+		bool isCheckingUpdate = false;
+
 		async Task CheckAndUpdate(string serverUrl)
 		{
+			if(isCheckingUpdate)
+			{
+				return;
+			}
+			isCheckingUpdate = true;
 			try
 			{
 				if (string.IsNullOrEmpty(serverUrl))
@@ -129,6 +141,10 @@ namespace AgentClient
 			catch (Exception ex)
 			{
 				Log.Error(ex, $"更新检查失败: {ex.Message}");
+			}
+			finally
+			{
+				isCheckingUpdate = false;
 			}
 		}
 

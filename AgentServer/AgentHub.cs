@@ -1,6 +1,7 @@
 ﻿﻿﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace AgentServer
@@ -16,7 +17,7 @@ namespace AgentServer
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
 
-		public async Task RegisterAgent(string boardSerial, string version, string ip, string group)
+		public async Task RegisterAgent(string boardSerial, string version, string ip, string group, int platform, string osArch, string osDesc)
 		{
 			service.Add(new AgentModel
 			{
@@ -24,6 +25,9 @@ namespace AgentServer
 				IpAddress = ip,
 				BoardSerial = boardSerial,
 				Version = version,
+				OSPlatform = platform,
+				OSArchitecture = osArch,
+				OSDescription = osDesc,
 				Group = group
 			});
 			Console.WriteLine("Agent Register:" + Context.ConnectionId);
