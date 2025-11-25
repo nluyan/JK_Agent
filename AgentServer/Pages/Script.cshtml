@@ -15,305 +15,436 @@
     <link rel="stylesheet" data-name="vs/editor/editor.main" href="/vs/editor/editor.main.css">
     <style>
         * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    margin: 0;
+       padding: 0;
+         box-sizing: border-box;
+     }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            height: 100vh;
-            overflow: hidden;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+     color: #2d3748;
+  height: 100vh;
+    overflow: hidden;
         }
 
-        .header {
-            background-color: #2d2d30;
-            padding: 10px 20px;
-            border-bottom: 1px solid #3e3e42;
-            display: flex;
-            justify-content: space-between;
+    .header {
+            background-color: white;
+            padding: 16px 30px;
+      border-bottom: 1px solid #e2e8f0;
+         display: flex;
+     justify-content: space-between;
             align-items: center;
-        }
+         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
 
-            .header h1 {
-                color: #4ec9b0;
-                font-size: 18px;
-                margin: 0;
-            }
+    .header h1 {
+    color: #2d3748;
+          font-size: 22px;
+            font-weight: 700;
+    margin: 0;
+        }
 
         .agent-info {
-            color: #9cdcfe;
+   color: #718096;
             font-size: 14px;
-        }
+         font-weight: 500;
+ }
+
+        .back-btn {
+       background-color: #edf2f7;
+            color: #4a5568;
+      border: 1px solid #cbd5e0;
+            padding: 8px 16px;
+ border-radius: 8px;
+      text-decoration: none;
+ font-size: 14px;
+            font-weight: 600;
+       transition: all 0.3s ease;
+       cursor: pointer;
+   }
+
+    .back-btn:hover {
+  background-color: #e2e8f0;
+            border-color: #a0aec0;
+     color: #2d3748;
+     text-decoration: none;
+    }
 
         .container {
-            display: flex;
-            height: calc(100vh - 60px);
+ display: flex;
+          height: calc(100vh - 65px);
+    gap: 20px;
+      padding: 20px;
         }
 
-        .left-panel {
-            width: 50%;
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            border-right: 1px solid #3e3e42;
+      .left-panel {
+         flex: 1;
+      display: flex;
+       flex-direction: column;
+            background-color: white;
+            border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+overflow: hidden;
         }
 
-        .right-panel {
-            width: 50%;
-            display: flex;
+     .right-panel {
+ flex: 1;
+     display: flex;
             flex-direction: column;
+            background-color: white;
+        border-radius: 12px;
+     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
         }
 
         .panel-header {
-            background-color: #2d2d30;
-            padding: 10px 15px;
-            border-bottom: 1px solid #3e3e42;
-            font-weight: bold;
-            color: #cccccc;
-            font-size: 14px;
+   background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            padding: 14px 20px;
+      border-bottom: 1px solid #e2e8f0;
+        font-weight: 600;
+     color: #2d3748;
+      font-size: 14px;
+   text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        form {
-            flex: 1;
+      form {
+   flex: 1;
             display: flex;
             flex-direction: column;
-        }
+     }
 
-        .script-editor {
-            flex: 1;
-            padding: 15px;
-            background-color: #1e1e1e;
-            display: flex;
-            flex-direction: column;
-        }
+   .script-editor {
+      flex: 1;
+   padding: 15px;
+    background-color: #fafbfc;
+       display: flex;
+       flex-direction: column;
+      overflow: hidden;
+    }
 
         #monaco-container {
             flex: 1;
-            border: 1px solid #3e3e42;
-            border-radius: 4px;
-            overflow: hidden;
+   border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        overflow: hidden;
         }
 
         #scriptTextarea {
-            display: none;
+       display: none;
         }
 
-        .controls {
-            padding: 15px;
-            background-color: #252526;
-            border-top: 1px solid #3e3e42;
-            display: flex;
-            gap: 10px;
+.controls {
+            padding: 15px 20px;
+  background-color: #f8f9fa;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+            gap: 12px;
             align-items: center;
-        }
+       flex-wrap: wrap;
+     }
 
-        .execute-btn {
-            background-color: #0e639c;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
+      .execute-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+         color: white;
+       border: none;
+         padding: 10px 20px;
+     border-radius: 8px;
+        cursor: pointer;
             font-size: 14px;
-            font-weight: bold;
-            transition: background-color 0.3s ease;
+         font-weight: 600;
+      transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          display: flex;
+            align-items: center;
+      gap: 6px;
         }
 
-            .execute-btn:hover:not(:disabled) {
-                background-color: #1177bb;
-            }
+        .execute-btn:hover:not(:disabled) {
+     transform: translateY(-2px);
+         box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
 
-            .execute-btn:disabled {
-                background-color: #6c6c6c;
-                cursor: not-allowed;
-            }
+        .execute-btn:disabled {
+   background: #cbd5e0;
+      cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
 
         .clear-btn {
-            background-color: #5a5a5a;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
+      background-color: #edf2f7;
+    color: #4a5568;
+     border: 1px solid #cbd5e0;
+        padding: 10px 20px;
+   border-radius: 8px;
+          cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.3s ease;
-        }
+            font-weight: 600;
+       transition: all 0.3s ease;
+            display: flex;
+       align-items: center;
+   gap: 6px;
+   }
 
-            .clear-btn:hover {
-                background-color: #6a6a6a;
-            }
+        .clear-btn:hover {
+ background-color: #e2e8f0;
+     border-color: #a0aec0;
+   color: #2d3748;
+        }
 
         .status {
-            margin-left: auto;
-            font-size: 12px;
-            color: #cccccc;
+  margin-left: auto;
+            font-size: 13px;
+   font-weight: 600;
+            padding: 6px 12px;
+   border-radius: 6px;
+background-color: #edf2f7;
+         color: #4a5568;
         }
 
-        .output-panel {
+.status.loading {
+       background-color: #fffbeb;
+  color: #b45309;
+}
+
+        .status.error {
+            background-color: #fee2e2;
+       color: #dc2626;
+      }
+
+ .status.success {
+            background-color: #dcfce7;
+    color: #16a34a;
+ }
+
+     .output-panel {
             flex: 1;
-            background-color: #0c0c0c;
-            border: 1px solid #3e3e42;
-            margin: 15px;
-            border-radius: 4px;
-            overflow: hidden;
-        }
+      background-color: #fafbfc;
+     border: 1px solid #e2e8f0;
+   margin: 15px;
+        border-radius: 8px;
+    overflow: hidden;
+  display: flex;
+          flex-direction: column;
+   }
 
         #output {
-            width: 100%;
-            height: 100%;
-            background-color: #0c0c0c;
-            color: #d4d4d4;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 13px;
+ flex: 1;
+         background-color: #ffffff;
+         color: #2d3748;
+       font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Courier New', monospace;
+     font-size: 13px;
             padding: 15px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            line-height: 1.4;
+    overflow-y: auto;
+            overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+          line-height: 1.5;
+         border: 1px solid #e2e8f0;
+     border-radius: 6px;
+ background-color: #f9fafb;
+   }
+
+        #output::-webkit-scrollbar {
+   width: 8px;
+            height: 8px;
+     }
+
+        #output::-webkit-scrollbar-track {
+    background-color: #f1f5f9;
+         border-radius: 4px;
         }
 
-        .back-btn {
-            background-color: #2d2d30;
-            color: #cccccc;
-            border: 1px solid #3e3e42;
-            padding: 6px 12px;
-            border-radius: 4px;
-            text-decoration: none;
-            font-size: 12px;
-            transition: all 0.3s ease;
-        }
+        #output::-webkit-scrollbar-thumb {
+            background-color: #cbd5e0;
+  border-radius: 4px;
+ }
 
-            .back-btn:hover {
-                background-color: #3e3e42;
-                color: white;
-                text-decoration: none;
-            }
+    #output::-webkit-scrollbar-thumb:hover {
+    background-color: #a0aec0;
+   }
 
-        .loading {
-            color: #ffcc02;
+   .loading {
+            color: #b45309;
+            font-weight: 600;
         }
 
         .error {
-            color: #f14c4c;
+            color: #dc2626;
+          font-weight: 600;
         }
 
-        .success {
-            color: #4ec9b0;
-        }
+    .success {
+      color: #16a34a;
+    font-weight: 600;
+    }
 
         .error-message {
-            color: #f14c4c;
-            background-color: #2a1a1a;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 10px;
-            border-left: 4px solid #f14c4c;
-        }
+            color: #991b1b;
+    background-color: #fee2e2;
+   padding: 12px;
+            border-radius: 6px;
+       margin-bottom: 10px;
+      border-left: 4px solid #dc2626;
+            font-size: 13px;
+      }
 
         .waiting-message {
-            color: #888;
-            font-style: italic;
-            text-align: center;
-            padding: 20px;
+ color: #718096;
+        font-style: italic;
+       text-align: center;
+  padding: 30px 20px;
+     user-select: none;
         }
 
-        @@media (max-width: 768px) {
-            .container {
-                flex-direction: column;
+  @@media (max-width: 1024px) {
+     .container {
+    flex-direction: column;
+           gap: 15px;
+        padding: 15px;
             }
 
             .left-panel, .right-panel {
                 width: 100%;
-                height: 50%;
-            }
+  height: 50%;
+      }
+
+    .header {
+                padding: 12px 20px;
+ }
+
+.panel-header {
+    padding: 12px 15px;
+           font-size: 13px;
+    }
+        }
+
+    @@media (max-width: 768px) {
+     .header {
+   flex-wrap: wrap;
+      gap: 10px;
+ }
+
+    .header h1 {
+       font-size: 18px;
+     width: 100%;
+      }
+
+  .controls {
+  flex-direction: column;
+    }
+
+   .execute-btn, .clear-btn {
+            width: 100%;
+    justify-content: center;
+ }
+
+        .status {
+  width: 100%;
+             text-align: center;
+                margin-left: 0;
+         }
+
+            #output {
+ font-size: 12px;
+ padding: 12px;
+   }
+
+            .container {
+     padding: 10px;
+     gap: 10px;
+   }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>💻 PowerShell脚本执行器</h1>
-        <div class="agent-info">Agent ID: @Model.Id</div>
-        <a href="/" class="back-btn">← 返回首页</a>
+        <h1>PowerShell 脚本执行器</h1>
+        <div style="display: flex; align-items: center; gap: 15px;">
+      <div class="agent-info">[Agent] @Model.Id</div>
+            <a href="/" class="back-btn">← 返回首页</a>
+        </div>
     </div>
 
     <div class="container">
         <div class="left-panel">
-            <div class="panel-header">📝 脚本编辑器</div>
-            <form method="post" asp-route-id="@Model.Id">
-                @Html.AntiForgeryToken()
-                <input type="hidden" asp-for="Id" />
+         <div class="panel-header">[脚本编辑器]</div>
+         <form method="post" asp-route-id="@Model.Id">
+        @Html.AntiForgeryToken()
+       <input type="hidden" asp-for="Id" />
                 <div class="script-editor">
-                    <!-- Monaco Editor容器 -->
-                    <div id="monaco-container"></div>
-                    <!-- 隐藏的textarea用于表单提交 -->
-                    <textarea asp-for="ScriptContent" id="scriptTextarea" name="ScriptContent" style="display: none;"></textarea>
-                </div>
-                <div class="controls">
-                    <button type="submit" id="executeBtn" class="execute-btn" @(Model.IsExecuting ? "disabled" : "")>
-                        @if (Model.IsExecuting)
-                        {
-                            <span>⏳ 执行中...</span>
-                        }
-                        else
-                        {
-                            <span>▶️ 执行脚本</span>
-                        }
-                    </button>
-                    <button type="button" id="clearBtn" class="clear-btn">🗑️ 清空输出</button>
-                    <div id="status" class="status">
-                        @if (Model.IsExecuting)
-                        {
-                            <span class="loading">执行中...</span>
-                        }
-                        else if (!string.IsNullOrEmpty(Model.ErrorMessage))
-                        {
-                            <span class="error">执行失败</span>
-                        }
-                        else if (!string.IsNullOrEmpty(Model.ExecutionResult))
-                        {
-                            <span class="success">执行成功</span>
-                        }
-                        else
-                        {
-                            <span>就绪</span>
-                        }
-                    </div>
-                </div>
-            </form>
+              <!-- Monaco Editor容器 -->
+    <div id="monaco-container"></div>
+          <!-- 隐藏的textarea用于表单提交 -->
+          <textarea asp-for="ScriptContent" id="scriptTextarea" name="ScriptContent" style="display: none;"></textarea>
         </div>
+              <div class="controls">
+               <button type="submit" id="executeBtn" class="execute-btn" @(Model.IsExecuting ? "disabled" : "")>
+            @if (Model.IsExecuting)
+  {
+           <span>⏳ 执行中...</span>
+      }
+       else
+            {
+   <span>▶ 执行脚本</span>
+       }
+    </button>
+    <button type="button" id="clearBtn" class="clear-btn">
+           <span>✕ 清空输出</span>
+     </button>
+    <div id="status" class="status @(Model.IsExecuting ? "loading" : !string.IsNullOrEmpty(Model.ErrorMessage) ? "error" : !string.IsNullOrEmpty(Model.ExecutionResult) ? "success" : "")">
+            @if (Model.IsExecuting)
+     {
+             <span class="loading">● 执行中...</span>
+       }
+    else if (!string.IsNullOrEmpty(Model.ErrorMessage))
+             {
+            <span class="error">● 执行失败</span>
+        }
+        else if (!string.IsNullOrEmpty(Model.ExecutionResult))
+         {
+          <span class="success">● 执行成功</span>
+           }
+       else
+  {
+    <span>● 就绪</span>
+         }
+   </div>
+            </div>
+       </form>
+</div>
 
         <div class="right-panel">
-            <div class="panel-header">📊 执行结果</div>
+            <div class="panel-header">[执行结果]</div>
             <div class="output-panel">
-                <div id="output">
-                    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-                    {
-                        <div class="error-message">
-                            <strong>❗ 执行错误：</strong><br />
-                            @Model.ErrorMessage
-                        </div>
-                    }
-                    else if (!string.IsNullOrEmpty(Model.ExecutionResult))
-                    {
-                        @Model.ExecutionResult
-                    }
-                    else if (Model.IsExecuting)
-                    {
-                        <div class="waiting-message">
-                            ⏳ 正在执行脚本，请稍候...
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="waiting-message">
-                            输入PowerShell脚本并点击"执行脚本"按钮来查看结果
-                        </div>
-                    }
-                </div>
-            </div>
+         <div id="output">
+         @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+                {
+    <div class="error-message">
+    <strong>⚠ 执行错误：</strong><br />
+         @Model.ErrorMessage
+  </div>
+}
+         else if (!string.IsNullOrEmpty(Model.ExecutionResult))
+    {
+    @Model.ExecutionResult
+    }
+          else if (Model.IsExecuting)
+      {
+      <div class="waiting-message">
+     ⏳ 正在执行脚本，请稍候...
+   </div>
+     }
+  else
+ {
+  <div class="waiting-message">
+           输入 PowerShell 脚本并点击"执行脚本"按钮来查看结果
+    </div>
+     }
+   </div>
+      </div>
         </div>
     </div>
 
@@ -353,32 +484,33 @@
         });
 
         document.addEventListener('DOMContentLoaded', function() {
-            const clearBtn = document.getElementById('clearBtn');
-            const output = document.getElementById('output');
+        const clearBtn = document.getElementById('clearBtn');
+      const output = document.getElementById('output');
             const form = document.querySelector('form');
+   const status = document.getElementById('status');
 
-            // 清空输出按钮功能
-            clearBtn.addEventListener('click', function() {
-                output.innerHTML = '<div class="waiting-message">输入PowerShell脚本并点击"执行脚本"按钮来查看结果</div>';
-                const status = document.getElementById('status');
-                status.innerHTML = '<span>就绪</span>';
-            });
+          // 清空输出按钮功能
+      clearBtn.addEventListener('click', function() {
+              output.innerHTML = '<div class="waiting-message">输入 PowerShell 脚本并点击"执行脚本"按钮来查看结果</div>';
+        status.className = 'status';
+          status.innerHTML = '<span>● 就绪</span>';
+     });
 
-            // 表单提交前确保Monaco Editor的内容同步到textarea
+        // 表单提交前确保Monaco Editor的内容同步到textarea
             form.addEventListener('submit', function(e) {
-                if (monacoEditor) {
-                    document.getElementById('scriptTextarea').value = monacoEditor.getValue();
-                }
-            });
+     if (monacoEditor) {
+      document.getElementById('scriptTextarea').value = monacoEditor.getValue();
+}
+   });
 
-            // 如果正在执行，每2秒刷新一次页面
-            @if (Model.IsExecuting)
-            {
-                    <text>
-                    setTimeout(function() {
-                        location.reload();
-                    }, 2000);
-                    </text>
+   // 如果正在执行，每2秒刷新一次页面
+    @if (Model.IsExecuting)
+       {
+      <text>
+         setTimeout(function() {
+       location.reload();
+     }, 2000);
+            </text>
             }
         });
     </script>

@@ -66,74 +66,76 @@ namespace AgentServer
 			return agent;
 		}
 
-		string GetAgentIdByDTO(DTOBase dto)
+		AgentModel GetAgentByDTO(DTOBase dto)
 		{
 			if(string.IsNullOrWhiteSpace(dto.AgentId) && string.IsNullOrWhiteSpace(dto.Serial) && string.IsNullOrWhiteSpace(dto.Ip))
 				throw new Exception("AgentId, Serial, IP不能同时为空");
-			var agentId = dto.AgentId;
-			if (agentId == null)
+			if (!string.IsNullOrWhiteSpace(dto.Serial))
 			{
-				if (!string.IsNullOrWhiteSpace(dto.Serial))
-				{
-					var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
-					if (agent == null)
-						throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
-					agentId = agent.AgentId;
-				}
-				else if(!string.IsNullOrWhiteSpace(dto.Ip))
-				{
-					var agent = agents.Values.Where(c => c.IpAddress.Contains(dto.Ip)).FirstOrDefault();
-					if (agent == null)
-						throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
-					agentId = agent.AgentId;
-				}
+				var agent = agents.Values.Where(c => c.BoardSerial == dto.Serial).FirstOrDefault();
+				if (agent == null)
+					throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
+				return agent;
 			}
-			return agentId;
+			else if (!string.IsNullOrWhiteSpace(dto.Ip))
+			{
+				var agent = agents.Values.Where(c => c.IpAddress.Contains(dto.Ip)).FirstOrDefault();
+				if (agent == null)
+					throw new Exception("未找到对应的Agent\n" + JsonSerializer.Serialize(dto));
+				return agent;
+			}
+			else
+				return agents.FirstOrDefault(c => c.Key == dto.AgentId).Value;
+
 		}
 
-		public async Task<string> ExecutePowershellScript(ExecuteDTO dto, string script)
+		public async Task<object> ExecutePowershellScript(ExecuteDTO dto, string script)
 		{
-			var agentId = GetAgentIdByDTO(dto);
+			var agent = GetAgentByDTO(dto);
+
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_scriptCallbacks.TryAdd(requestId, tcs);
+			if(dto.Native || agent.OSDescription.Contains("Microsoft Windows 6.1"))
+				script = "--native--\n" + script;
 
 			try
 			{
 				// 发送脚本执行请求到Agent
-				await _hubContext.Clients.Client(agentId).SendAsync("ExecutePowershellScript", requestId, script);
+				await _hubContext.Clients.Client(agent.AgentId).SendAsync("ExecutePowershellScript", requestId, script);
 
 				// 等待客户端回传结果（最多等30秒）
 				var task = await Task.WhenAny(tcs.Task, Task.Delay(30000));
 				if (task == tcs.Task)
 				{
 					var result = await tcs.Task;
-					_scriptCallbacks.TryRemove(requestId, out _);
-					return result;
+					return new ExecuteResult { Status = 0, Result = result };
 				}
 				else
 				{
-					_scriptCallbacks.TryRemove(requestId, out _);
-					throw new TimeoutException("脚本执行超时，Agent未在30秒内返回结果");
+					return new ExecuteResult { Status = 1, Result = "脚本执行超时，Agent未在30秒内返回结果" };
 				}
 			}
 			catch (Exception ex)
 			{
+				return new ExecuteResult { Status = 1, Result = $"执行PowerShell脚本失败: {ex.Message}" };
+			}
+			finally
+			{
 				_scriptCallbacks.TryRemove(requestId, out _);
-				throw new Exception($"执行PowerShell脚本失败: {ex.Message}");
 			}
 		}
 
 		public async Task<byte[]> CaptureScreen(ScreenDTO dto)
 		{
-			var agentId = GetAgentIdByDTO(dto);
+			var agent = GetAgentByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<byte[]>();
 			_captureCallbacks.TryAdd(requestId, tcs);
 
 			try
 			{
-				await _hubContext.Clients.Client(agentId).SendAsync("CaptureScreen", requestId);
+				await _hubContext.Clients.Client(agent.AgentId).SendAsync("CaptureScreen", requestId);
 				var task = await Task.WhenAny(tcs.Task, Task.Delay(50000));
 				if (task == tcs.Task)
 				{
@@ -157,7 +159,7 @@ namespace AgentServer
 
 		public async Task<string> RemoteDesk(RemoteDeskDTO dto, string server, string key)
 		{
-			var agentId = GetAgentIdByDTO(dto);
+			var agent = GetAgentByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_remoteDeskCallbacks.TryAdd(requestId, tcs);
@@ -165,7 +167,7 @@ namespace AgentServer
 			try
 			{
 				// 发送脚本执行请求到Agent
-				await _hubContext.Clients.Client(agentId).SendAsync("RemoteDesk", requestId, server, key);
+				await _hubContext.Clients.Client(agent.AgentId).SendAsync("RemoteDesk", requestId, server, key);
 
 				// 等待客户端回传结果（最多等30秒）
 				var task = await Task.WhenAny(tcs.Task, Task.Delay(30000));

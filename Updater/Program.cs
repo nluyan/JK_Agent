@@ -4,23 +4,24 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Updater
 {
 	internal class Program
 	{
-		static async Task Main(string[] args)
+		static void Main(string[] args)
 		{
-			var baseDirectory = AppContext.BaseDirectory;
+			var baseDirectory = Directory.GetCurrentDirectory();
 			Directory.SetCurrentDirectory(baseDirectory);
-			File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), $"{DateTime.Now.ToString()} 启动更新...\n");
+			File.AppendAllText(Path.Combine(baseDirectory, "logs", "update_log.txt"), $"{DateTime.Now.ToString()} 启动更新...\n");
 			try
 			{
 				if (Directory.Exists("temp"))
 				{
 					ServiceHelper.StopService("JikeAgent");
-					await Task.Delay(3000);
+					Thread.Sleep(2000);
 
 					foreach (var process in Process.GetProcessesByName("AgentClient"))
 					{
@@ -38,7 +39,7 @@ namespace Updater
 			}
 			catch(Exception ex)
 			{
-				File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), ex.Message + "\n");
+				File.AppendAllText(Path.Combine(baseDirectory, "logs", "update_log.txt"), ex.Message + "\n");
 			}
 			finally
 			{
@@ -78,7 +79,7 @@ namespace Updater
 				}
 				catch(Exception ex)
 				{
-					File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "update_log.txt"), ex.Message + "\n");
+					File.AppendAllText(Path.Combine(Directory.GetCurrentDirectory(), "logs", "update_log.txt"), ex.Message + "\n");
 				}
 			}
 

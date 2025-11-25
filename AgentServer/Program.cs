@@ -69,20 +69,53 @@ builder.Services
 	   //})
 	   .AddJwtBearer("ApplicationAuthority", options =>
 	   {
-		   if (!string.IsNullOrWhiteSpace(authority))
-		   {
-			   options.Authority = authority;
-		   }
+		   //if (!string.IsNullOrWhiteSpace(authority))
+		   //{
+		   // options.Authority = authority;
+		   //}
+		   //options.TokenValidationParameters = new TokenValidationParameters
+		   //{
+		   // NameClaimType = "name",
+		   // ValidateIssuer = true,
+		   // ValidIssuer = issuer,
+		   // ValidateAudience = true,
+		   // ValidAudience = audience,
+		   // ValidateLifetime = true,
+		   // ValidateIssuerSigningKey = true,
+		   // IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)) //如果authority提供了，这个参数可以不要
+		   //};
+		   // 如果你的 IdP 支持 OpenID Connect metadata，优先使用 Authority
+		   options.Authority = authority;
+
 		   options.TokenValidationParameters = new TokenValidationParameters
 		   {
 			   NameClaimType = "name",
-			   ValidateIssuer = true,
-			   ValidIssuer = issuer,
+			   ValidateIssuer = false,
+			   //ValidIssuer = auth.Authority,
 			   ValidateAudience = true,
 			   ValidAudience = audience,
 			   ValidateLifetime = true,
-			   ValidateIssuerSigningKey = true,
-			   IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)) //如果authority提供了，这个参数可以不要
+		   };
+
+		   // 诊断事件：运行时在控制台/日志输出详细原因
+		   options.Events = new JwtBearerEvents
+		   {
+			   OnMessageReceived = ctx =>
+			   {
+				   Console.WriteLine($"收到验证请求: {ctx.Request.Path} \ntoken: {ctx.Request.Headers.Authorization}");
+				   return Task.CompletedTask;
+			   },
+			   OnTokenValidated = ctx =>
+			   {
+
+				   Console.WriteLine("验证通过:" + ctx.Principal.Identity.Name);
+				   return Task.CompletedTask;
+			   },
+			   OnAuthenticationFailed = ctx =>
+			   {
+				   Console.WriteLine($"验证失败: {ctx.Exception?.GetType().Name} \n {ctx.Exception?.Message} \n {ctx.Exception.InnerException?.Message}");
+				   return Task.CompletedTask;
+			   }
 		   };
 	   });
 
@@ -117,7 +150,7 @@ if (!app.Environment.IsDevelopment())
 	app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
@@ -143,14 +176,14 @@ app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) 
 		return Results.BadRequest(new { success = false, message = "用户名或密码错误" });
 });
 
-app.MapGet("/api/agent/list", (AgentService service) 
-	=> service.GetAgents()).RequireAuthorization("ApiPolicy");
+app.MapGet("/api/agent/list", (AgentService service)
+	=> service.GetAgents());//.RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
-	=> await service.ExecutePowershellScript(dto, dto.Script)).RequireAuthorization("ApiPolicy");
+	=> await service.ExecutePowershellScript(dto, dto.Script));//.RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/screen", async (AgentService service, ScreenDTO dto)
-	=> Results.File(await service.CaptureScreen(dto), "image/jpeg", "screen.jpg")).RequireAuthorization("ApiPolicy");
+	=> Results.File(await service.CaptureScreen(dto), "image/jpeg", "screen.jpg"));//.RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
-	=> await service.RemoteDesk(dto, builder.Configuration["RemoteDesk:Server"], builder.Configuration["RemoteDesk:Key"])).RequireAuthorization("ApiPolicy");
+	=> await service.RemoteDesk(dto, builder.Configuration["RemoteDesk:Server"], builder.Configuration["RemoteDesk:Key"]));//.RequireAuthorization("ApiPolicy");
 
 
 app.Run();

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.SignalR;
+using System.Text.Json;
 
 namespace AgentServer.Pages
 {
@@ -78,7 +79,7 @@ namespace AgentServer.Pages
             {
                 Console.WriteLine($"Executing script for Agent {Id}: {ScriptContent.Substring(0, Math.Min(50, ScriptContent.Length))}...");
                 IsExecuting = true;
-                ExecutionResult = await _agentService.ExecutePowershellScript(new ExecuteDTO { AgentId = Id }, ScriptContent);
+                ExecutionResult = JsonSerializer.Serialize(await _agentService.ExecutePowershellScript(new ExecuteDTO { AgentId = Id }, ScriptContent));
                 ErrorMessage = null;
                 Console.WriteLine($"Script execution completed. Result length: {ExecutionResult?.Length ?? 0}");
             }

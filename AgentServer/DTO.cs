@@ -11,6 +11,7 @@
 
 	public class ExecuteDTO : DTOBase
 	{
+		public bool Native { get; set; }
 		public string Script { get; set; }
 	}
 
@@ -23,5 +24,12 @@
 		public string Username { get; set; }
 
 		public string Password { get; set; }
+	}
+
+	public class ExecuteResult
+	{
+		public int Status { get; set; }
+
+		public string? Result { get; set; }
 	}
 }

@@ -161,7 +161,10 @@ namespace AgentClient
 					WindowStyle = ProcessWindowStyle.Hidden
 				});
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				Log.Error(ex, $"Updater.exe执行失败: {ex.Message}");
+			}
 		}
 
 		async Task DownloadFileAsync(string url, string filePath)
