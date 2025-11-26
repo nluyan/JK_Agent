@@ -1,0 +1,21 @@
+{
+  "profiles": {
+    "AgentClient": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "WSL2-Debug": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Windows\\System32\\wsl.exe",
+      "commandLineArgs": "bash -lc \"cd /mnt/d/Workshop/JK_Agent/AgentClient && dotnet run\"",
+      "workingDirectory": "",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

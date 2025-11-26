@@ -1,4 +1,4 @@
-﻿﻿using AgentClient;
+﻿using AgentClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -79,6 +79,12 @@ host.Run();
 
 void InstallSystemd()
 {
+	if (!File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "AgentClient")))
+	{
+		Console.WriteLine("需要在AgentClient相同目录下执行安装程序");
+		Environment.Exit(0);
+	}
+
 	var file = "/etc/systemd/system/jike.service";
 	if (!File.Exists(file))
 	{
@@ -101,6 +107,7 @@ SyslogIdentifier=JikeAgent
 WantedBy=multi-user.target";
 		File.WriteAllText(file, content);
 
+		Process.Start("chmod", $"+x ./pwsh/pwsh").WaitForExit();
 		Process.Start("systemctl", "enable jike.service").WaitForExit();
 		Process.Start("systemctl", "start jike.service").WaitForExit();
 	}

@@ -327,63 +327,7 @@ internal class Agent
 						}
 						else
 						{
-							//var iss = InitialSessionState.CreateDefault();
-							//if (OperatingSystem.IsWindows())
-							//{
-							//	iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
-							//}
-							//using var runspace = RunspaceFactory.CreateRunspace(iss);
-							//runspace.Open();
-
-							//using (var ps = PowerShell.Create())
-							//{
-							//	ps.Runspace = runspace;
-							//	ps.AddScript(script);
-							//	ps.AddCommand("Out-String").AddParameter("Stream");
-							//	var output = new StringBuilder();
-
-							//	try
-							//	{
-							//		var results = await ps.InvokeAsync();
-							//		if (ps.Streams.Error.Count > 0)
-							//		{
-							//			foreach (var error in ps.Streams.Error)
-							//			{
-							//				output.AppendLine(error.ToString());
-							//			}
-							//		}
-							//		else
-							//		{
-							//			foreach (var item in results)
-							//			{
-							//				if (item != null)
-							//				{
-							//					var itemText = item.ToString();
-							//					if (!string.IsNullOrEmpty(itemText))
-							//					{
-							//						output.AppendLine(itemText);
-							//					}
-							//				}
-							//			}
-							//		}
-							//	}
-							//	catch (Exception ex)
-							//	{
-							//		Log.Error(ex, "Critical execution error: " + ex.Message);
-							//		output.AppendLine("Critical execution error: " + ex.Message);
-							//	}
-
-							//	outputText = output.ToString();
-							//	Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
-
-							//	// 检查连接状态
-							//	if (connection?.State != HubConnectionState.Connected)
-							//	{
-							//		Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
-							//		return;
-							//	}
-							//}
-							outputText = await ExecuteScriptEmbeded(sr.ReadToEnd());
+							outputText = await ExecuteScriptEmbeded(script);
 						}
 
 						try
@@ -473,7 +417,10 @@ try {{
 
 					try
 					{
-						var startInfo = new System.Diagnostics.ProcessStartInfo("powershell", $"-NoProfile -ExecutionPolicy Bypass -File \"{wrapperPath}\"")
+						var cmd = "powershell";
+						if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+							cmd = "./pwsh/pwsh";
+						var startInfo = new System.Diagnostics.ProcessStartInfo(cmd, $"-NoProfile -ExecutionPolicy Bypass -File \"{wrapperPath}\"")
 						{
 							UseShellExecute = false,
 							CreateNoWindow = true,

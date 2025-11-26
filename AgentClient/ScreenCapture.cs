@@ -15,7 +15,7 @@ namespace AgentClient
             uint sessionId = WTSGetActiveConsoleSessionId();
             if (sessionId == 0xFFFFFFFF)
             {
-                Log.Error("StartCapture: No active console session found.");
+                Log.Error("StartCapture: No active console session found."); 
                 throw new InvalidOperationException("当前没有用户");
             }
             

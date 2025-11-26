@@ -79,9 +79,9 @@ namespace AgentServer.Pages
             {
                 Console.WriteLine($"Executing script for Agent {Id}: {ScriptContent.Substring(0, Math.Min(50, ScriptContent.Length))}...");
                 IsExecuting = true;
-                ExecutionResult = JsonSerializer.Serialize(await _agentService.ExecutePowershellScript(new ExecuteDTO { AgentId = Id }, ScriptContent));
-                ErrorMessage = null;
-                Console.WriteLine($"Script execution completed. Result length: {ExecutionResult?.Length ?? 0}");
+				var result = await _agentService.ExecutePowershellScript(new ExecuteDTO { AgentId = Id }, ScriptContent);
+				ExecutionResult = result.Result;
+				Console.WriteLine($"Script execution completed. Result length: {ExecutionResult?.Length ?? 0}");
             }
             catch (Exception ex)
             {

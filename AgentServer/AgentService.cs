@@ -89,14 +89,14 @@ namespace AgentServer
 
 		}
 
-		public async Task<object> ExecutePowershellScript(ExecuteDTO dto, string script)
+		public async Task<ExecuteResult> ExecutePowershellScript(ExecuteDTO dto, string script)
 		{
 			var agent = GetAgentByDTO(dto);
 
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_scriptCallbacks.TryAdd(requestId, tcs);
-			if(dto.Native || agent.OSDescription.Contains("Microsoft Windows 6.1"))
+			if(dto.Native || agent.OSDescription.Contains("Microsoft Windows 6.1") || agent.OSPlatform == 2)
 				script = "--native--\n" + script;
 
 			try
