@@ -1,14 +1,8 @@
 ﻿using AgentClient;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.PowerShell;
 using Serilog;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Management;
-using System.Management.Automation;
-using System.Management.Automation.Runspaces;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -18,24 +12,10 @@ using System.Text;
 
 internal class Agent
 {
-	ConcurrentDictionary<string, PowerShell> shells = new();
-
 	string serverUrl;
 	string group;
 
 	public event EventHandler OnCheckUpdate;
-
-	//string[] InvalidMarkers =
-	//{
-	//				"To be filled by O.E.M.",
-	//				"Default string",
-	//				"None",
-	//				"N/A",
-	//				"000000000000",
-	//				"Empty",
-	//				"System Serial Number",
-	//				"Base Board Serial Number"
-	//};
 
 	public Agent(string url, string group)
 	{
@@ -133,153 +113,45 @@ internal class Agent
 					}
 				});
 
-				connection.On<string>("RegisterTerminal", async terminalId =>
-				{
-					Log.Information("收到RegisterTerminal请求");
-					try
-					{
-						var ps = PowerShell.Create();
-						shells.TryAdd(terminalId, ps);
+				//connection.On<string>("RegisterTerminal", async terminalId =>
+				//{
+				//	Log.Information("收到RegisterTerminal请求");
+				//	try
+				//	{
+				//		var ps = PowerShell.Create();
+				//		shells.TryAdd(terminalId, ps);
 
-						if (connection.State == HubConnectionState.Connected)
-						{
-							await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, $"注册终端失败 {terminalId}: {ex.Message}");
-					}
-				});
+				//		if (connection.State == HubConnectionState.Connected)
+				//		{
+				//			await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
+				//		}
+				//	}
+				//	catch (Exception ex)
+				//	{
+				//		Log.Error(ex, $"注册终端失败 {terminalId}: {ex.Message}");
+				//	}
+				//});
 
-				connection.On<string>("TerminalClosed", async terminalId =>
-				{
-					Log.Information("收到TerminalClosed请求");
-					try
-					{
-						if (shells.TryRemove(terminalId, out var ps))
-						{
-							ps.Dispose();
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, $"关闭终端失败 {terminalId}: {ex.Message}");
-					}
-				});
+				//connection.On<string>("TerminalClosed", async terminalId =>
+				//{
+				//	Log.Information("收到TerminalClosed请求");
+				//	try
+				//	{
+				//		if (shells.TryRemove(terminalId, out var ps))
+				//		{
+				//			ps.Dispose();
+				//		}
+				//	}
+				//	catch (Exception ex)
+				//	{
+				//		Log.Error(ex, $"关闭终端失败 {terminalId}: {ex.Message}");
+				//	}
+				//});
 
 				connection.On("CheckUpdate", () =>
 				{
 					Log.Information("收到CheckUpdate请求");
 					OnCheckUpdate?.Invoke(this, EventArgs.Empty);
-				});
-
-				connection.On<string, string>("ExecutePowerShell", async (command, terminalId) =>
-				{
-					Log.Information("收到ExecutePowerShell请求");
-					try
-					{
-						if (!shells.TryGetValue(terminalId, out var ps))
-						{
-							Log.Error($"终端不存在: {terminalId}");
-							return;
-						}
-
-						if (ps.InvocationStateInfo.State == PSInvocationState.Running)
-						{
-							return;
-						}
-						ps.Commands.Clear();
-						ps.Streams.ClearStreams();
-						ps.AddScript(command);
-						ps.AddCommand("Out-String").AddParameter("Stream");
-						var output = new StringBuilder();
-
-						try
-						{
-							var results = await ps.InvokeAsync();
-							if (ps.Streams.Error.Count > 0)
-							{
-								foreach (var error in ps.Streams.Error)
-								{
-									output.AppendLine(error.ToString());
-								}
-							}
-							else
-							{
-								foreach (var item in results)
-								{
-									output.AppendLine(item.ToString());
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							Log.Error(ex, "Critical execution error: " + ex.Message);
-							output.AppendLine("Critical execution error: " + ex.Message);
-						}
-						finally
-						{
-							try
-							{
-								if (output.Length > 0 && connection?.State == HubConnectionState.Connected)
-								{
-									await connection.SendAsync("PowerShellOutput", terminalId, output.ToString());
-								}
-								if (connection?.State == HubConnectionState.Connected)
-								{
-									await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
-								}
-							}
-							catch (Exception ex)
-							{
-								Log.Error(ex, $"发送PowerShell输出失败: {ex.Message}");
-							}
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, $"执行PowerShell命令失败: {ex.Message}");
-					}
-				});
-
-				connection.On<string, string, int>("RequestCompletion", async (terminalId, commandLine, cursorPosition) =>
-				{
-					Log.Information("收到RequestCompletion请求");
-					try
-					{
-						if (!shells.TryGetValue(terminalId, out var ps))
-						{
-							if (connection?.State == HubConnectionState.Connected)
-							{
-								await connection.SendAsync("CompletionCallback", terminalId, new List<string>());
-							}
-							return;
-						}
-
-						var completionResult = CommandCompletion.CompleteInput(commandLine, cursorPosition, null, ps);
-						var list = completionResult.CompletionMatches.Select(m => m.CompletionText).ToList();
-
-						if (connection?.State == HubConnectionState.Connected)
-						{
-							await connection.SendAsync("CompletionCallback", terminalId, list);
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Debug($"请求命令补全失败: {ex.Message}");
-						try
-						{
-							if (connection?.State == HubConnectionState.Connected)
-							{
-								await connection.SendAsync("CompletionCallback", terminalId, new List<string>());
-							}
-						}
-						catch (Exception sendEx)
-						{
-							Log.Error(sendEx, $"发送空补全结果失败: {sendEx.Message}");
-						}
-					}
 				});
 
 				connection.On<string, string, string>("RemoteDesk", async (callId, server, key) =>
@@ -319,16 +191,7 @@ internal class Agent
 					{
 						string outputText = "执行结果为空。";
 						Log.Information("执行脚本:\n" + script);
-						StringReader sr = new StringReader(script);
-						var line = sr.ReadLine();
-						if (line.Contains("--native--"))
-						{
-							outputText = ExecuteScriptNatively(sr.ReadToEnd());
-						}
-						else
-						{
-							outputText = await ExecuteScriptEmbeded(script);
-						}
+						outputText = ExecuteScriptNatively(script);
 
 						try
 						{
@@ -344,45 +207,6 @@ internal class Agent
 						Log.Error(ex, $"执行PowerShell脚本失败 {callId}: {ex.Message}");
 					}
 				});
-
-				async Task<string> ExecuteScriptEmbeded(string script)
-				{
-					using var ps = PowerShell.Create();
-
-					ps.AddScript(script);
-					ps.AddCommand("Out-String").AddParameter("Stream");
-
-					var output = new StringBuilder();
-
-					try
-					{
-						var results = await ps.InvokeAsync();
-						if (ps.Streams.Error.Count > 0)
-						{
-							foreach (var error in ps.Streams.Error)
-								output.AppendLine(error.ToString());
-						}
-						else
-						{
-							foreach (var item in results)
-							{
-								if (item != null)
-								{
-									var text = item.ToString();
-									if (!string.IsNullOrEmpty(text))
-										output.AppendLine(text);
-								}
-							}
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, "Critical execution error: " + ex.Message);
-						output.AppendLine("Critical execution error: " + ex.Message);
-					}
-
-					return output.ToString();
-				}
 
 				string ExecuteScriptNatively(string script)
 				{
@@ -487,29 +311,9 @@ try {{
 					}
 				}
 
-
-				string GetPowerShellPath(PowerShell ps)
-				{
-					try
-					{
-						if (ps == null) return "PS>";
-
-						ps.Commands.Clear();
-						ps.Streams.ClearStreams();
-						var result = ps.AddScript("prompt").Invoke<string>();
-						return result?.FirstOrDefault() ?? "PS>";
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, $"获取PowerShell路径失败: {ex.Message}");
-						return "PS>";
-					}
-				}
-
 				string GetUniqeId()
 				{
 					var mac = GetFirstPhysicalMac();
-					//var board = GetBoardSerials();
 					if (mac == null)
 						return "None";
 					else
@@ -530,7 +334,7 @@ try {{
 					await connection.InvokeAsync("RegisterAgent",
 						GetUniqeId(),
 						Settings.Version,
-						GetFirstIpv4(),
+						GetAllIP(),
 						group,
 						platform,
 						osArch,
@@ -563,45 +367,6 @@ try {{
 					}
 					return null;
 				}
-
-				//string? GetBoardSerials()
-				//{
-				//	try
-				//	{
-				//		using var searcher = new ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BaseBoard");
-				//		foreach (ManagementObject mo in searcher.Get())
-				//		{
-				//			var raw = mo["SerialNumber"]?.ToString();
-				//			if (IsValidSerial(raw))
-				//			{
-				//				return raw;
-				//			}
-				//		}
-				//	}
-				//	catch (Exception ex)
-				//	{
-				//	}
-				//	return null;   // 不再返回 string.Empty，区分“未获取”与“空值”
-				//}
-
-				//bool IsValidSerial(string? sn)
-				//{
-				//	if (string.IsNullOrWhiteSpace(sn))
-				//		return false;
-
-				//	sn = sn.Trim();
-
-				//	foreach (var marker in InvalidMarkers)
-				//	{
-				//		if (sn.Equals(marker, StringComparison.OrdinalIgnoreCase))
-				//			return false;
-				//	}
-
-				//	if (sn.Replace("0", "").Replace("_", "").Replace(" ", "").Length == 0)
-				//		return false;
-
-				//	return true;
-				//}
 
 				while (!stoppingToken.IsCancellationRequested)
 				{
@@ -673,7 +438,7 @@ try {{
 		}
 	}
 
-	public string GetFirstIpv4()
+	public string GetAllIP()
 	{
 		try
 		{

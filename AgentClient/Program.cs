@@ -1,18 +1,10 @@
 ﻿using AgentClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
-using Microsoft.PowerShell;
-using Microsoft.Win32;
 using Serilog;
 using System.Diagnostics;
-using System.IO.Compression;
-using System.Management.Automation.Internal;
-using System.Management.Automation.Runspaces;
-using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json.Nodes;
 
 
 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && args.Contains("--install"))
