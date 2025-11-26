@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -58,7 +59,8 @@ namespace AgentClient
 			// 启动定期更新检查任务
 			_ = Task.Run(async () =>
 			{
-				var updateCheckInterval = TimeSpan.FromMinutes(10); // 10分钟检查一次
+				var checkUpdate = node.Root["CheckUpdate"]?.ToString();
+				var updateCheckInterval = checkUpdate == null ? TimeSpan.FromMinutes(10) : TimeSpan.FromSeconds(int.Parse(checkUpdate));
 				Log.Debug($"启动定期更新检查，间隔: {updateCheckInterval.TotalMinutes} 分钟");
 
 				while (!stoppingToken.IsCancellationRequested)
@@ -125,17 +127,51 @@ namespace AgentClient
 					Log.Information($"发现新版本: {remoteVersion}，当前版本: {Settings.Version} 开始下载更新...");
 
 					// 下载更新器和新版本
-					await DownloadFileAsync($"{serverUrl}/update/{group}/Updater.exe", "Updater.exe");
-					await DownloadFileAsync($"{serverUrl}/update/{group}/AgentClient.zip", "AgentClient.zip");
-					Log.Information("删除旧的临时目录...");
-					if (Directory.Exists("temp"))
-						Directory.Delete("temp", true);
-					Log.Information("解压更新包...");
-					ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
-					Log.Information("删除更新包...");
-					File.Delete("AgentClient.zip");
-					Log.Information("启动更新程序...");
-					StartUpdater();
+					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+					{
+						await DownloadFileAsync($"{serverUrl}/update/{group}/Updater.exe", "Updater.exe");
+						await DownloadFileAsync($"{serverUrl}/update/{group}/AgentClient.zip", "AgentClient.zip");
+						Log.Information("删除旧的临时目录...");
+						if (Directory.Exists("temp"))
+							Directory.Delete("temp", true);
+						Log.Information("解压更新包...");
+						ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
+						Log.Information("删除更新包...");
+						File.Delete("AgentClient.zip");
+						Log.Information("启动更新程序...");
+						try
+						{
+							Process.Start(new ProcessStartInfo
+							{
+								FileName = "Updater.exe",
+								UseShellExecute = true,
+								CreateNoWindow = true,
+								WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+								WindowStyle = ProcessWindowStyle.Hidden
+							});
+						}
+						catch (Exception ex)
+						{
+							Log.Error(ex, $"Updater.exe执行失败: {ex.Message}");
+						}
+					}
+					else
+					{
+						//await DownloadFileAsync($"{serverUrl}/update/{group}/Updater.sh", "Updater.sh");
+						await DownloadFileAsync($"{serverUrl}/update/{group}/AgentClient.zip", "AgentClient.zip");
+						Log.Information("删除旧的临时目录...");
+						if (Directory.Exists("temp"))
+							Directory.Delete("temp", true);
+						Log.Information("解压更新包...");
+						ZipFile.ExtractToDirectory("AgentClient.zip", "temp", overwriteFiles: true);
+						Log.Information("删除更新包...");
+						File.Delete("AgentClient.zip");
+						Log.Information("复制文件...");
+						CopyDirectory("temp", ".");
+						Log.Information("退出应用");
+						Process.Start("chmod", "+x AgentClient").WaitForExit();
+						Environment.Exit(0);
+					}
 				}
 			}
 			catch (Exception ex)
@@ -148,22 +184,50 @@ namespace AgentClient
 			}
 		}
 
-		void StartUpdater()
+		void CopyDirectory(string src, string dst, bool overwrite = true)
 		{
-			try
+			if (src == null) throw new ArgumentNullException(nameof(src));
+			if (dst == null) throw new ArgumentNullException(nameof(dst));
+
+			// 1.  normalize 路径，支持 "..\xxx" 这种相对路径
+			var srcDir = new DirectoryInfo(Path.GetFullPath(src));
+			var dstDir = new DirectoryInfo(Path.GetFullPath(dst));
+
+			if (!srcDir.Exists)
+				throw new DirectoryNotFoundException($"源目录不存在: {srcDir.FullName}");
+
+			// 2.  递归拷贝
+			CopyRecursive(srcDir, dstDir, overwrite);
+		}
+
+		void CopyRecursive(DirectoryInfo src, DirectoryInfo dst, bool overwrite)
+		{
+			// 保证目标目录存在
+			if (!dst.Exists)
+				dst.Create();
+
+			// 先拷文件
+			foreach (var file in src.GetFiles())
 			{
-				Process.Start(new ProcessStartInfo
+				var dstFile = new FileInfo(Path.Combine(dst.FullName, file.Name));
+				try
 				{
-					FileName = "Updater.exe",
-					UseShellExecute = true,
-					CreateNoWindow = true,
-					WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-					WindowStyle = ProcessWindowStyle.Hidden
-				});
+					//file.CopyTo(dstFile.FullName, overwrite);
+					//file.MoveTo(dstFile.FullName, true);
+					Console.WriteLine("mv " + $"{file} {dstFile.FullName}");
+					Process.Start("mv", $"{file} {dstFile.FullName}");
+				}
+				catch (Exception ex)
+				{
+					File.AppendAllText(Path.Combine(Directory.GetCurrentDirectory(), "logs", "update_log.txt"), ex.Message + "\n");
+				}
 			}
-			catch (Exception ex)
+
+			// 再递归子目录
+			foreach (var subDir in src.GetDirectories())
 			{
-				Log.Error(ex, $"Updater.exe执行失败: {ex.Message}");
+				var dstSub = new DirectoryInfo(Path.Combine(dst.FullName, subDir.Name));
+				CopyRecursive(subDir, dstSub, overwrite);
 			}
 		}
 

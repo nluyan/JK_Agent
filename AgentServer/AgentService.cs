@@ -174,19 +174,22 @@ namespace AgentServer
 				if (task == tcs.Task)
 				{
 					var result = await tcs.Task;
-					_remoteDeskCallbacks.TryRemove(requestId, out _);
 					return result;
 				}
 				else
 				{
-					_remoteDeskCallbacks.TryRemove(requestId, out _);
+					
 					throw new TimeoutException("执行超时，Agent未在30秒内返回结果");
 				}
 			}
 			catch (Exception ex)
 			{
-				_remoteDeskCallbacks.TryRemove(requestId, out _);
+				
 				throw new Exception($"启动远程桌面失败: {ex.Message}");
+			}
+			finally
+			{
+				_remoteDeskCallbacks.TryRemove(requestId, out _);
 			}
 		}
 

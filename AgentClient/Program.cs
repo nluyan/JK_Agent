@@ -11,17 +11,17 @@ using System.IO.Compression;
 using System.Management.Automation.Internal;
 using System.Management.Automation.Runspaces;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 
-//删除老版本
-//foreach(var p in Process.GetProcessesByName("AgentClient"))
-//{
-//	if (p.Id != Process.GetCurrentProcess().Id)
-//	{
-//		p.Kill();
-//	}
-//}
-//DeleteRegisterTable();
+
+if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && args.Contains("--install"))
+{
+	Console.WriteLine("Install Jike Agent...");
+	InstallSystemd();
+	Console.WriteLine("Install Completed");
+	return;
+}
 
 Console.WriteLine("Jike Agent 客户端启动中...");
 
@@ -77,30 +77,31 @@ builder.ConfigureServices(services =>
 IHost host = builder.Build();
 host.Run();
 
+void InstallSystemd()
+{
+	var file = "/etc/systemd/system/jike.service";
+	if (!File.Exists(file))
+	{
+		var content = $@"[Unit]
+Description=JikeAgent
+After=network.target
 
-//void DeleteRegisterTable()
-//{
-//	const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-//	const string valueName = "JK_Agent_Client";
+[Service]
+Type=simple
+User=root
+WorkingDirectory={Directory.GetCurrentDirectory()}
+ExecStart={Directory.GetCurrentDirectory()}/AgentClient
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=JikeAgent
 
-//	try
-//	{
-//		// 打开 HKCU\...\Run 键，要求“可写”
-//		using (RegistryKey runKey = Registry.CurrentUser.OpenSubKey(keyPath, true))
-//		{
-//			// 判断值是否存在
-//			if (runKey.GetValue(valueName) == null)
-//			{
-//				Console.WriteLine("JK_Agent_Client 不存在，无需删除。");
-//			}
-//			else
-//			{
-//				runKey.DeleteValue(valueName, false);   // false = 不抛异常（如果刚被别的进程删了）
-//				Console.WriteLine("JK_Agent_Client 已成功删除。");
-//			}
-//		}
-//	}
-//	catch (Exception ex)
-//	{
-//	}
-//}
+[Install]
+WantedBy=multi-user.target";
+		File.WriteAllText(file, content);
+
+		Process.Start("systemctl", "enable jike.service").WaitForExit();
+		Process.Start("systemctl", "start jike.service").WaitForExit();
+	}
+}

@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Data;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Pipes;
 using System.Security.Cryptography.Xml;
 using System.Text;
@@ -80,15 +81,7 @@ namespace AgentClient
 		{
 			await using var pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
 
-			try
-			{
-				await pipeClient.ConnectAsync(timeoutMs);
-			}
-			catch (TimeoutException)
-			{
-				Log.Error("Error: Connection to RustDesk IPC timed out.");
-				return null;
-			}
+			await pipeClient.ConnectAsync(timeoutMs);
 
 			using var cts = new CancellationTokenSource(timeoutMs);
 
@@ -247,8 +240,7 @@ namespace AgentClient
 					//VideoConnCount = await GetControlledSessionCountAsync() ?? 0
 				};
 			}
-
-			return null;
+			throw new Exception(JsonSerializer.Serialize(content));
 		}
 
 		/// <summary>
@@ -346,14 +338,48 @@ namespace AgentClient
 		public static async Task<string> StartRemoteDesk(string server, string key)
 		{
 			var client = new RustDeskClient();
+			var installCounter = false;
 			while (true)
 			{
-				var status = await client.GetConnectionStatusAsync();
+				ConnectionStatus status;
+				try
+				{
+					status = await client.GetConnectionStatusAsync();
+				}
+				catch(TimeoutException)
+				{
+					if (File.Exists(Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\RustDesk\rustdesk.exe"))
+						|| File.Exists(Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\RustDesk\rustdesk.exe")))
+						throw new Exception("无法连接RustDesk IPC");
+
+					if(installCounter == true)
+						throw new Exception("RustDesk未安装，且自动安装失败");
+
+					installCounter = true;
+					Log.Debug($"开始安装rustdesk");
+					var process = Process.Start("RustDesk.exe", "--silent-install");
+					process.WaitForExit();
+					await Task.Delay(10000);
+					continue;
+				}
 				Log.Debug($"获取到返回状态：{status.StatusNum} {status.StatusDescription}");
 				if (status != null)
 				{
-					if (status.StatusNum > 0) //没有连接上服务器
+					if (status.StatusNum > 0)
 					{
+						var rustServer = await client.GetRendezvousServerAsync();
+						if(!rustServer.Contains(server))
+						{
+							Log.Debug($"开始设置服务器 {server} {key}");
+							await client.SetOptionsAsync(new Dictionary<string, string>
+							{
+								{ "custom-rendezvous-server", server },
+								{ "key", key }
+							});
+							Log.Debug("服务器设置完成");
+							await Task.Delay(3000);
+							continue;
+						}
 						Log.Debug("开始获取Id和Password");
 						var id = await client.GetIdAsync();
 						var pwd = await client.GetTemporaryPasswordAsync();
@@ -379,7 +405,7 @@ namespace AgentClient
 				}
 				else
 				{
-					Log.Debug("找不到RustDesk进程，启动rustdesk");
+					Log.Debug("启动rustdesk");
 					var process = Process.Start(new ProcessStartInfo
 					{
 						FileName = "RustDesk.exe",
@@ -398,7 +424,7 @@ namespace AgentClient
 
 	public static class PipeStreamExtensions
 	{
-		public static Task ReadExactlyAsync(this PipeStream pipe, byte[] buffer, CancellationToken cancellationToken = default)
+		public static ValueTask ReadExactlyAsync(this PipeStream pipe, byte[] buffer, CancellationToken cancellationToken = default)
 			=> pipe.ReadExactlyAsync(buffer, 0, buffer.Length, cancellationToken);
 
 		public static async Task ReadExactlyAsync(this PipeStream pipe, byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)

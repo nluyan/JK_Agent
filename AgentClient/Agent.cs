@@ -285,8 +285,31 @@ internal class Agent
 				connection.On<string, string, string>("RemoteDesk", async (callId, server, key) =>
 				{
 					Log.Information("收到RemoteDesk请求");
-					var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
-					await connection.SendAsync("RemoteDeskCallback", callId, result);
+					try
+					{
+						var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
+						await connection.SendAsync("RemoteDeskCallback", callId, result);
+					}
+					catch(Exception ex)
+					{
+						await connection.SendAsync("RemoteDeskCallback", callId, ex.Message);
+					}
+					
+				});
+
+				connection.On<string, string, string>("InstallRemoteDesk", async (callId, server, key) =>
+				{
+					Log.Information("收到安装RemoteDesk请求");
+					try
+					{
+						var process = Process.Start("RustDesk.exe", "--silent-install");
+						process.WaitForExit();
+						await connection.SendAsync("InstallRemoteDeskCallback", callId, "ok");
+					}
+					catch (Exception ex)
+					{
+						await connection.SendAsync("InstallRemoteDeskCallback", callId, ex.Message);
+					}
 				});
 
 				connection.On<string, string>("ExecutePowershellScript", async (callId, script) =>
@@ -304,62 +327,63 @@ internal class Agent
 						}
 						else
 						{
-							var iss = InitialSessionState.CreateDefault();
-							if (OperatingSystem.IsWindows())
-							{
-								iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
-							}
-							using var runspace = RunspaceFactory.CreateRunspace(iss);
-							runspace.Open();
+							//var iss = InitialSessionState.CreateDefault();
+							//if (OperatingSystem.IsWindows())
+							//{
+							//	iss.ExecutionPolicy = ExecutionPolicy.Unrestricted;
+							//}
+							//using var runspace = RunspaceFactory.CreateRunspace(iss);
+							//runspace.Open();
 
-							using (var ps = PowerShell.Create())
-							{
-								ps.Runspace = runspace;
-								ps.AddScript(script);
-								ps.AddCommand("Out-String").AddParameter("Stream");
-								var output = new StringBuilder();
+							//using (var ps = PowerShell.Create())
+							//{
+							//	ps.Runspace = runspace;
+							//	ps.AddScript(script);
+							//	ps.AddCommand("Out-String").AddParameter("Stream");
+							//	var output = new StringBuilder();
 
-								try
-								{
-									var results = await ps.InvokeAsync();
-									if (ps.Streams.Error.Count > 0)
-									{
-										foreach (var error in ps.Streams.Error)
-										{
-											output.AppendLine(error.ToString());
-										}
-									}
-									else
-									{
-										foreach (var item in results)
-										{
-											if (item != null)
-											{
-												var itemText = item.ToString();
-												if (!string.IsNullOrEmpty(itemText))
-												{
-													output.AppendLine(itemText);
-												}
-											}
-										}
-									}
-								}
-								catch (Exception ex)
-								{
-									Log.Error(ex, "Critical execution error: " + ex.Message);
-									output.AppendLine("Critical execution error: " + ex.Message);
-								}
+							//	try
+							//	{
+							//		var results = await ps.InvokeAsync();
+							//		if (ps.Streams.Error.Count > 0)
+							//		{
+							//			foreach (var error in ps.Streams.Error)
+							//			{
+							//				output.AppendLine(error.ToString());
+							//			}
+							//		}
+							//		else
+							//		{
+							//			foreach (var item in results)
+							//			{
+							//				if (item != null)
+							//				{
+							//					var itemText = item.ToString();
+							//					if (!string.IsNullOrEmpty(itemText))
+							//					{
+							//						output.AppendLine(itemText);
+							//					}
+							//				}
+							//			}
+							//		}
+							//	}
+							//	catch (Exception ex)
+							//	{
+							//		Log.Error(ex, "Critical execution error: " + ex.Message);
+							//		output.AppendLine("Critical execution error: " + ex.Message);
+							//	}
 
-								outputText = output.ToString();
-								Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
+							//	outputText = output.ToString();
+							//	Log.Debug($"PowerShell执行完成，输出长度: {outputText.Length} 字节");
 
-								// 检查连接状态
-								if (connection?.State != HubConnectionState.Connected)
-								{
-									Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
-									return;
-								}
-							}
+							//	// 检查连接状态
+							//	if (connection?.State != HubConnectionState.Connected)
+							//	{
+							//		Log.Warning($"连接状态异常: {connection?.State}，无法发送结果");
+							//		return;
+							//	}
+							//}
+							outputText = await ExecuteScriptEmbeded(sr.ReadToEnd());
 						}
 
 						try
@@ -376,6 +400,45 @@ internal class Agent
 						Log.Error(ex, $"执行PowerShell脚本失败 {callId}: {ex.Message}");
 					}
 				});
+
+				async Task<string> ExecuteScriptEmbeded(string script)
+				{
+					using var ps = PowerShell.Create();
+
+					ps.AddScript(script);
+					ps.AddCommand("Out-String").AddParameter("Stream");
+
+					var output = new StringBuilder();
+
+					try
+					{
+						var results = await ps.InvokeAsync();
+						if (ps.Streams.Error.Count > 0)
+						{
+							foreach (var error in ps.Streams.Error)
+								output.AppendLine(error.ToString());
+						}
+						else
+						{
+							foreach (var item in results)
+							{
+								if (item != null)
+								{
+									var text = item.ToString();
+									if (!string.IsNullOrEmpty(text))
+										output.AppendLine(text);
+								}
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Log.Error(ex, "Critical execution error: " + ex.Message);
+						output.AppendLine("Critical execution error: " + ex.Message);
+					}
+
+					return output.ToString();
+				}
 
 				string ExecuteScriptNatively(string script)
 				{
@@ -510,7 +573,7 @@ try {{
 					}
 				}
 
-				async Task RegisterClient()
+				async Task RegisterClient() 
 				{
 					int platform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 1 :
 						RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 2 :

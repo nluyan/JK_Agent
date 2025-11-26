@@ -8,350 +8,403 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
- <meta charset="utf-8" />
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"]</title>
     <style>
-   * {
- margin: 0;
- padding: 0;
-        box-sizing: border-box;
-   }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-  body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-   padding: 20px;
+            min-height: 100vh;
+            padding: 20px;
         }
 
         .container {
-    max-width: 100%;
-       margin: 0 auto;
-      background-color: white;
-     border-radius: 16px;
- box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      padding: 40px;
-  animation: slideUp 0.5s ease-out;
+            max-width: 100%;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            animation: slideUp 0.5s ease-out;
         }
 
-  @@keyframes slideUp {
-    from {
-    opacity: 0;
-   transform: translateY(20px);
-      }
-        to {
-       opacity: 1;
-      transform: translateY(0);
-}
-}
+        @@keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
         h1 {
-    color: #2d3748;
-        text-align: center;
-        margin-bottom: 10px;
-    font-size: 32px;
-font-weight: 700;
-       letter-spacing: -0.5px;
-      }
-
-        .title-description {
-      text-align: center;
-       color: #718096;
-   margin-bottom: 30px;
-     font-size: 14px;
- }
-
-     .header-actions {
-display: flex;
-justify-content: space-between;
-      align-items: center;
-    margin-bottom: 30px;
- padding-bottom: 20px;
-   border-bottom: 1px solid #e2e8f0;
- flex-wrap: wrap;
-      gap: 15px;
-}
-
-      .agent-count {
-    color: #4a5568;
-   font-size: 15px;
-         font-weight: 600;
-    background: #edf2f7;
-    padding: 8px 16px;
-      border-radius: 8px;
-      }
-
-   .agent-count strong {
-    color: #667eea;
-    font-size: 20px;
-   }
-
-        .header-right {
-         display: flex;
-  gap: 12px;
-     align-items: center;
- flex-wrap: wrap;
+            color: #2d3748;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
         }
 
- .user-info {
- color: #4a5568;
-   font-size: 14px;
-   padding: 0 12px;
+        .title-description {
+            text-align: center;
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e2e8f0;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .agent-count {
+            color: #4a5568;
+            font-size: 15px;
+            font-weight: 600;
+            background: #edf2f7;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+
+            .agent-count strong {
+                color: #667eea;
+                font-size: 20px;
+            }
+
+        .header-right {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .user-info {
+            color: #4a5568;
+            font-size: 14px;
+            padding: 0 12px;
             border-right: 1px solid #e2e8f0;
         }
 
-   .refresh-btn {
-   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-   color: white;
-       border: none;
-      padding: 10px 20px;
-    border-radius: 8px;
-     cursor: pointer;
-       font-size: 14px;
-        font-weight: 600;
-    transition: all 0.3s ease;
-      text-decoration: none;
-   display: inline-flex;
-align-items: center;
-      gap: 6px;
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-
-        .refresh-btn:hover {
-    transform: translateY(-2px);
-       box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
         }
 
-  .refresh-btn.logout {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
-   }
+            .refresh-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+            }
 
-        .refresh-btn.logout:hover {
-  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+            .refresh-btn.logout {
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+            }
+
+                .refresh-btn.logout:hover {
+                    box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+                }
+
+        .agent-list {
+            margin-top: 20px;
         }
-
-      .agent-list {
- margin-top: 20px;
-   }
 
         .table-wrapper {
             overflow-x: auto;
-        border-radius: 12px;
-       border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
         }
 
         .agent-table {
-       width: 100%;
-        border-collapse: collapse;
-     background: white;
-    }
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
 
-     .agent-table thead {
-      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-     border-bottom: 2px solid #e2e8f0;
-   }
+            .agent-table thead {
+                background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+                border-bottom: 2px solid #e2e8f0;
+            }
 
-   .agent-table th {
-padding: 16px 12px;
-   text-align: left;
- font-weight: 600;
-          color: #2d3748;
- font-size: 13px;
-   text-transform: uppercase;
-      letter-spacing: 0.5px;
-          overflow: hidden;
+            .agent-table th {
+                padding: 16px 12px;
+                text-align: left;
+                font-weight: 600;
+                color: #2d3748;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+                .agent-table th:nth-child(1) {
+                    width: 6%;
+                }
+
+                .agent-table th:nth-child(2) {
+                    width: 15%;
+                }
+
+                .agent-table th:nth-child(3) {
+                    width: 5%;
+                }
+
+                .agent-table th:nth-child(4) {
+                    width: 12%;
+                }
+
+                .agent-table th:nth-child(5) {
+                    width: 12%;
+                }
+
+                .agent-table th:nth-child(6) {
+                    width: 6%;
+                }
+
+                .agent-table th:nth-child(7) {
+                    width: 22%;
+                }
+
+                .agent-table th:nth-child(8) {
+                    width: 5%;
+                }
+
+                .agent-table th:nth-child(9) {
+                    width: 17%;
+                }
+
+            .agent-table tbody tr {
+                border-bottom: 1px solid #edf2f7;
+                transition: all 0.3s ease;
+            }
+
+                .agent-table tbody tr:hover {
+                    background-color: #f8f9fa;
+                }
+
+                .agent-table tbody tr:last-child {
+                    border-bottom: none;
+                }
+
+            .agent-table td {
+                padding: 14px 12px;
+                color: #4a5568;
+                font-size: 14px;
+                white-space: nowrap;
+                overflow: hidden;
+                position: relative;
+            }
+
+                .agent-table td:nth-child(1) {
+                    width: 6%;
+                }
+
+                .agent-table td:nth-child(2) {
+                    width: 15%;
+                }
+
+                .agent-table td:nth-child(3) {
+                    width: 5%;
+                }
+
+                .agent-table td:nth-child(4) {
+                    width: 12%;
+                }
+
+                .agent-table td:nth-child(5) {
+                    width: 12%;
+                }
+
+                .agent-table td:nth-child(6) {
+                    width: 6%;
+                }
+
+                .agent-table td:nth-child(7) {
+                    width: 22%;
+                }
+
+                .agent-table td:nth-child(8) {
+                    width: 5%;
+                }
+
+                .agent-table td:nth-child(9) {
+                    width: 17%;
+                }
+
+                .agent-table td.field-value {
+                    color: #2d3748;
+                    font-weight: 500;
+                    font-family: 'Monaco', 'Courier New', monospace;
+                    font-size: 13px;
+                }
+
+        .cell-content {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
             text-overflow: ellipsis;
-      }
-
-   .agent-table th:nth-child(1) { width: 6%; }
-  .agent-table th:nth-child(2) { width: 15%; }
-  .agent-table th:nth-child(3) { width: 5%; }
-     .agent-table th:nth-child(4) { width: 12%; }
-        .agent-table th:nth-child(5) { width: 12%; }
-    .agent-table th:nth-child(6) { width: 6%; }
-   .agent-table th:nth-child(7) { width: 22%; }
-    .agent-table th:nth-child(8) { width: 5%; }
- .agent-table th:nth-child(9) { width: 17%; }
-
- .agent-table tbody tr {
-   border-bottom: 1px solid #edf2f7;
-  transition: all 0.3s ease;
         }
 
-   .agent-table tbody tr:hover {
-   background-color: #f8f9fa;
- }
-
-   .agent-table tbody tr:last-child {
- border-bottom: none;
- }
-
-        .agent-table td {
-     padding: 14px 12px;
-   color: #4a5568;
-   font-size: 14px;
-       white-space: nowrap;
-      overflow: hidden;
-   position: relative;
-      }
-
-        .agent-table td:nth-child(1) { width: 6%; }
-    .agent-table td:nth-child(2) { width: 15%; }
-        .agent-table td:nth-child(3) { width: 5%; }
-     .agent-table td:nth-child(4) { width: 12%; }
-        .agent-table td:nth-child(5) { width: 12%; }
- .agent-table td:nth-child(6) { width: 6%; }
-      .agent-table td:nth-child(7) { width: 22%; }
-        .agent-table td:nth-child(8) { width: 5%; }
-        .agent-table td:nth-child(9) { width: 17%; }
-
-        .agent-table td.field-value {
-       color: #2d3748;
-       font-weight: 500;
-    font-family: 'Monaco', 'Courier New', monospace;
- font-size: 13px;
-}
-
-   .cell-content {
-   display: block;
-    white-space: nowrap;
-          overflow: hidden;
-            text-overflow: ellipsis;
-     }
-
-      .tooltip {
-  position: relative;
-         display: block;
-          width: 100%;
-  height: 100%;
-     overflow: visible;
+        .tooltip {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
         }
 
-     .tooltip .tooltiptext {
-      visibility: hidden;
- width: 320px;
-   background-color: #2d3748;
-    color: #fff;
-            text-align: left;
-   border-radius: 6px;
-  padding: 10px 12px;
- position: absolute;
-    z-index: 10000;
-   bottom: 100%;
-   left: 50%;
-margin-left: -160px;
- margin-bottom: 8px;
-  opacity: 0;
-transition: opacity 0.3s ease;
-font-family: 'Monaco', 'Courier New', monospace;
-    font-size: 12px;
- word-break: break-word;
- white-space: normal;
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-         pointer-events: none;
-  }
+            .tooltip .tooltiptext {
+                visibility: hidden;
+                width: 320px;
+                background-color: #2d3748;
+                color: #fff;
+                text-align: left;
+                border-radius: 6px;
+                padding: 10px 12px;
+                position: absolute;
+                z-index: 10000;
+                bottom: 100%;
+                left: 50%;
+                margin-left: -160px;
+                margin-bottom: 8px;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                font-family: 'Monaco', 'Courier New', monospace;
+                font-size: 12px;
+                word-break: break-word;
+                white-space: normal;
+                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+                pointer-events: none;
+            }
 
-      .tooltip .tooltiptext::after {
-    content: "";
-     position: absolute;
-   bottom: -8px;
-  left: 50%;
-   margin-left: -5px;
-    border-width: 5px;
-   border-style: solid;
-      border-color: #2d3748 transparent transparent transparent;
-        }
+                .tooltip .tooltiptext::after {
+                    content: "";
+                    position: absolute;
+                    bottom: -8px;
+                    left: 50%;
+                    margin-left: -5px;
+                    border-width: 5px;
+                    border-style: solid;
+                    border-color: #2d3748 transparent transparent transparent;
+                }
 
- .tooltip:hover .tooltiptext {
-         visibility: visible;
-      opacity: 1;
-        }
+            .tooltip:hover .tooltiptext {
+                visibility: visible;
+                opacity: 1;
+            }
 
         .action-buttons {
             display: flex;
-    gap: 8px;
-     flex-wrap: nowrap;
-         justify-content: flex-start;
+            gap: 8px;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
         }
 
         .btn-base {
-    border: none;
-       padding: 8px 14px;
-    border-radius: 6px;
-      cursor: pointer;
-   font-size: 12px;
-   font-weight: 600;
-      transition: all 0.3s ease;
-  text-decoration: none;
- display: inline-flex;
-  align-items: center;
-     justify-content: center;
- gap: 4px;
-   white-space: nowrap;
-        flex-shrink: 0;
-}
-
-      .powershell-btn {
-     background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
-    color: white;
-        box-shadow: 0 2px 8px rgba(0, 120, 212, 0.2);
-  }
-
-  .powershell-btn:hover {
-  transform: translateY(-1px);
-     box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
+
+        .powershell-btn {
+            background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 120, 212, 0.2);
+        }
+
+            .powershell-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
+            }
 
         .script-btn {
-    background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%);
- color: white;
+            background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%);
+            color: white;
             box-shadow: 0 2px 8px rgba(111, 66, 193, 0.2);
-     }
-
-        .script-btn:hover {
-    transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3);
-      }
-
-    .remote-btn {
-       background: linear-gradient(135deg, #28a745 0%, #218838 100%);
-     color: white;
-        box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
         }
 
-        .remote-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-  }
+            .script-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3);
+            }
 
-     .remote-btn:disabled {
- background: #cbd5e0;
-        cursor: not-allowed;
- opacity: 0.6;
+        .remote-btn {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
         }
 
-    .no-agents {
-    text-align: center;
+            .remote-btn:hover:not(:disabled) {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+            }
+
+            .remote-btn:disabled {
+                background: #cbd5e0;
+                cursor: not-allowed;
+                opacity: 0.6;
+            }
+
+        .no-agents {
+            text-align: center;
             color: #718096;
-  padding: 60px 40px;
-background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-      border-radius: 12px;
-      border: 2px dashed #cbd5e0;
+            padding: 60px 40px;
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            border-radius: 12px;
+            border: 2px dashed #cbd5e0;
             animation: slideUp 0.5s ease-out;
-      }
-
-  .no-agents h3 {
-font-size: 24px;
-         margin-bottom: 12px;
-            color: #2d3748;
-}
-
-   .no-agents p {
-   font-size: 14px;
-         color: #718096;
         }
+
+            .no-agents h3 {
+                font-size: 24px;
+                margin-bottom: 12px;
+                color: #2d3748;
+            }
+
+            .no-agents p {
+                font-size: 14px;
+                color: #718096;
+            }
     </style>
 </head>
 <body>
@@ -360,186 +413,186 @@ font-size: 24px;
     }
     <form method="post" style="display: none;">
         @Html.AntiForgeryToken()
-  </form>
-    
+    </form>
+
     <div class="container">
         <h1>Agent 管理中心</h1>
-    <div class="title-description">实时监控和管理您的所有 Agent 设备</div>
-        
-      <div class="header-actions">
-<div class="agent-count">
-     [Agent] 当前连接: <strong>@Model.Agents.Count</strong>
+        <div class="title-description">实时监控和管理您的所有 Agent 设备</div>
+
+        <div class="header-actions">
+            <div class="agent-count">
+                [Agent] 当前连接: <strong>@Model.Agents.Count</strong>
             </div>
-    <div class="header-right">
-       <span class="user-info">[User] @User.Identity.Name</span>
-  <a href="/" class="refresh-btn">刷新列表</a>
-  <form method="post" style="display: inline;">
-  @Html.AntiForgeryToken()
-  <input type="hidden" name="handler" value="Logout" />
-   <button type="submit" class="refresh-btn logout">退出登录</button>
-     </form>
+            <div class="header-right">
+                <span class="user-info">[User] @User.Identity.Name</span>
+                <a href="/" class="refresh-btn">刷新列表</a>
+                <form method="post" style="display: inline;">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="handler" value="Logout" />
+                    <button type="submit" class="refresh-btn logout">退出登录</button>
+                </form>
             </div>
         </div>
 
         <div class="agent-list">
-      @if (Model.Agents.Any())
-          {
-         <div class="table-wrapper">
-            <table class="agent-table">
-   <thead>
-           <tr>
-              <th>[机构]</th>
-      <th>[Agent ID]</th>
-   <th>[版本]</th>
-        <th>[IP 地址]</th>
-      <th>[序列号]</th>
-       <th>[平台]</th>
-  <th>[系统描述]</th>
-      <th>[架构]</th>
-       <th>[操作]</th>
-  </tr>
-      </thead>
-   <tbody>
-                  @foreach (var agent in Model.Agents)
-          {
-<tr>
-     <td class="field-value">
-          <div class="tooltip">
-      <span class="cell-content">@agent.Group</span>
-          <span class="tooltiptext">@agent.Group</span>
-   </div>
-     </td>
-   <td class="field-value">
-     <div class="tooltip">
-     <span class="cell-content">@agent.AgentId</span>
-     <span class="tooltiptext">@agent.AgentId</span>
-      </div>
-             </td>
- <td class="field-value">
-    <div class="tooltip">
-        <span class="cell-content">@agent.Version</span>
-       <span class="tooltiptext">@agent.Version</span>
-</div>
-    </td>
-    <td class="field-value">
- <div class="tooltip">
-      <span class="cell-content">@agent.IpAddress</span>
-          <span class="tooltiptext">@agent.IpAddress</span>
-  </div>
-   </td>
-   <td class="field-value">
-    <div class="tooltip">
-     <span class="cell-content">@agent.BoardSerial</span>
-     <span class="tooltiptext">@agent.BoardSerial</span>
-</div>
-     </td>
-      <td class="field-value">
- <div class="tooltip">
-  <span class="cell-content">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
-  <span class="tooltiptext">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
-   </div>
-   </td>
-   <td class="field-value">
-     <div class="tooltip">
-    <span class="cell-content">@agent.OSDescription</span>
-      <span class="tooltiptext">@agent.OSDescription</span>
-    </div>
-  </td>
-     <td class="field-value">
- <div class="tooltip">
-            <span class="cell-content">@agent.OSArchitecture</span>
-     <span class="tooltiptext">@agent.OSArchitecture</span>
-  </div>
-      </td>
-   <td>
-   <div class="action-buttons">
-     <a href="/Term/@agent.AgentId" target="_blank" class="btn-base powershell-btn">PowerShell</a>
-  <a href="/Script/@agent.AgentId" target="_blank" class="btn-base script-btn">脚本</a>
-      <button onclick="remoteManage('@agent.AgentId')" class="btn-base remote-btn" id="remote-btn-@agent.AgentId">远程</button>
-     </div>
-    </td>
-      </tr>
-    }
- </tbody>
-        </table>
-            </div>
+            @if (Model.Agents.Any())
+            {
+                <div class="table-wrapper">
+                    <table class="agent-table">
+                        <thead>
+                            <tr>
+                                <th>[机构]</th>
+                                <th>[Agent ID]</th>
+                                <th>[版本]</th>
+                                <th>[IP 地址]</th>
+                                <th>[序列号]</th>
+                                <th>[平台]</th>
+                                <th>[系统描述]</th>
+                                <th>[架构]</th>
+                                <th>[操作]</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var agent in Model.Agents)
+                            {
+                                <tr>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.Group</span>
+                                            <span class="tooltiptext">@agent.Group</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.AgentId</span>
+                                            <span class="tooltiptext">@agent.AgentId</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.Version</span>
+                                            <span class="tooltiptext">@agent.Version</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.IpAddress</span>
+                                            <span class="tooltiptext">@agent.IpAddress</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.BoardSerial</span>
+                                            <span class="tooltiptext">@agent.BoardSerial</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
+                                            <span class="tooltiptext">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.OSDescription</span>
+                                            <span class="tooltiptext">@agent.OSDescription</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.OSArchitecture</span>
+                                            <span class="tooltiptext">@agent.OSArchitecture</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <a href="/Term/@agent.AgentId" target="_blank" class="btn-base powershell-btn">PowerShell</a>
+                                            <a href="/Script/@agent.AgentId" target="_blank" class="btn-base script-btn">脚本</a>
+                                            <button onclick="remoteManage('@agent.AgentId')" class="btn-base remote-btn" id="remote-btn-@agent.AgentId">远程</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
             else
-       {
-    <div class="no-agents">
-     <h3>暂无连接的 Agent</h3>
-   <p>请确保 Agent 已正确配置并连接到服务器</p>
+            {
+                <div class="no-agents">
+                    <h3>暂无连接的 Agent</h3>
+                    <p>请确保 Agent 已正确配置并连接到服务器</p>
                 </div>
-  }
+            }
         </div>
- </div>
+    </div>
 
     <script>
-        // 自动刷新页面 (可选)
-        // setInterval(() => {
-     //     window.location.reload();
-        // }, 30000); // 30秒刷新一次
+                // 自动刷新页面 (可选)
+                // setInterval(() => {
+             //     window.location.reload();
+                // }, 30000); // 30秒刷新一次
 
-        async function remoteManage(agentId) {
-  const button = document.getElementById(`remote-btn-${agentId}`);
-    const originalText = button.innerHTML;
-   
-            try {
-     // 禁用按钮并显示等待状态
- button.disabled = true;
-     button.innerHTML = '连接中...';
-     
-      const formData = new FormData();
-   formData.append('agentId', agentId);
-    formData.append('handler', 'RemoteManage');
-  
-       // 获取防伪令牌
-     const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
-           if (tokenInput) {
-      formData.append('__RequestVerificationToken', tokenInput.value);
-    }
-           
-       const response = await fetch('/', {
-     method: 'POST',
-    body: formData
- });
-  
-  if (response.ok) {
-    const result = await response.json();
-           
-       if (result.success) {
-     // 解析返回的id和key
-      const parts = result.data.split(',');
-          if (parts.length === 2) {
-    const id = parts[0].trim();
-           const key = parts[1].trim();
-  
-      // 使用自定义协议打开本地应用程序
-   const protocolUrl = `jike://remotedesk/${id}/${key}`;
-      console.log('尝试打开协议URL:', protocolUrl);
-  
-           // 直接打开自定义协议
-       window.location.href = protocolUrl;
-     } else {
-         alert('服务器返回的数据格式不正确');
-  }
-   } else {
-        alert(`远程管理连接失败: ${result.error}`);
-         }
-   } else {
-         const responseText = await response.text();
-   console.error('请求失败:', response.status, responseText);
-       alert(`请求失败 (${response.status})，请稍后重试。`);
-      }
-     } catch (error) {
-  console.error('远程管理错误:', error);
- alert('远程管理连接失败，请稍后重试。');
-    } finally {
-  // 恢复按钮状态
-button.disabled = false;
-        button.innerHTML = originalText;
+                async function remoteManage(agentId) {
+          const button = document.getElementById(`remote-btn-${agentId}`);
+            const originalText = button.innerHTML;
+
+                    try {
+             // 禁用按钮并显示等待状态
+         button.disabled = true;
+             button.innerHTML = '连接中...';
+
+              const formData = new FormData();
+           formData.append('agentId', agentId);
+            formData.append('handler', 'RemoteManage');
+
+               // 获取防伪令牌
+             const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
+                   if (tokenInput) {
+              formData.append('__RequestVerificationToken', tokenInput.value);
+            }
+
+               const response = await fetch('/', {
+             method: 'POST',
+            body: formData
+         });
+
+          if (response.ok) {
+            const result = await response.json();
+
+               if (result.success) {
+             // 解析返回的id和key
+              const parts = result.data.split(',');
+                  if (parts.length === 2) {
+            const id = parts[0].trim();
+                   const key = parts[1].trim();
+
+              // 使用自定义协议打开本地应用程序
+           const protocolUrl = `jike://remotedesk/${id}/${key}`;
+              console.log('尝试打开协议URL:', protocolUrl);
+
+                   // 直接打开自定义协议
+               window.location.href = protocolUrl;
+             } else {
+                         alert(result.data);
           }
-        }
-</script>
+           } else {
+                alert(`远程管理连接失败: ${result.error}`);
+                 }
+           } else {
+                 const responseText = await response.text();
+           console.error('请求失败:', response.status, responseText);
+               alert(`请求失败 (${response.status})，请稍后重试。`);
+              }
+             } catch (error) {
+          console.error('远程管理错误:', error);
+         alert('远程管理连接失败，请稍后重试。');
+            } finally {
+          // 恢复按钮状态
+        button.disabled = false;
+                button.innerHTML = originalText;
+                  }
+                }
+    </script>
 </body>
 </html>
