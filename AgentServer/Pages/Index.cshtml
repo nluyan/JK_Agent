@@ -2,7 +2,7 @@
 @using AgentServer.Pages
 @model IndexModel
 @{
-    ViewData["Title"] = "Agent¹ÜÀíÖĞĞÄ";
+    ViewData["Title"] = "Agentç®¡ç†ä¸­å¿ƒ";
 }
 
 <!DOCTYPE html>
@@ -199,7 +199,9 @@
                 }
 
                 .agent-table th:nth-child(9) {
-                    width: 17%;
+                    width: 150px;
+                    min-width: 150px;
+                    max-width: 150px;
                 }
 
             .agent-table tbody tr {
@@ -257,7 +259,9 @@
                 }
 
                 .agent-table td:nth-child(9) {
-                    width: 17%;
+                    width: 200px;
+                    min-width: 200px;
+                    max-width: 200px;
                 }
 
                 .agent-table td.field-value {
@@ -409,27 +413,27 @@
 </head>
 <body>
     @{
-        // Ìí¼Ó·ÀÎ±ÁîÅÆÖ§³Ö
+        // æ·»åŠ é˜²ä¼ªä»¤ç‰Œæ”¯æŒ
     }
     <form method="post" style="display: none;">
         @Html.AntiForgeryToken()
     </form>
 
     <div class="container">
-        <h1>Agent ¹ÜÀíÖĞĞÄ</h1>
-        <div class="title-description">ÊµÊ±¼à¿ØºÍ¹ÜÀíÄúµÄËùÓĞ Agent Éè±¸</div>
+        <h1>Agent ç®¡ç†ä¸­å¿ƒ</h1>
+        <div class="title-description">å®æ—¶ç›‘æ§å’Œç®¡ç†æ‚¨çš„æ‰€æœ‰ Agent è®¾å¤‡</div>
 
         <div class="header-actions">
             <div class="agent-count">
-                [Agent] µ±Ç°Á¬½Ó: <strong>@Model.Agents.Count</strong>
+                [Agent] å½“å‰è¿æ¥: <strong>@Model.Agents.Count</strong>
             </div>
             <div class="header-right">
                 <span class="user-info">[User] @User.Identity.Name</span>
-                <a href="/" class="refresh-btn">Ë¢ĞÂÁĞ±í</a>
+                <a href="/" class="refresh-btn">åˆ·æ–°åˆ—è¡¨</a>
                 <form method="post" style="display: inline;">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="handler" value="Logout" />
-                    <button type="submit" class="refresh-btn logout">ÍË³öµÇÂ¼</button>
+                    <button type="submit" class="refresh-btn logout">é€€å‡ºç™»å½•</button>
                 </form>
             </div>
         </div>
@@ -441,15 +445,15 @@
                     <table class="agent-table">
                         <thead>
                             <tr>
-                                <th>[»ú¹¹]</th>
+                                <th>[æœºæ„]</th>
                                 <th>[Agent ID]</th>
-                                <th>[°æ±¾]</th>
-                                <th>[IP µØÖ·]</th>
-                                <th>[ĞòÁĞºÅ]</th>
-                                <th>[Æ½Ì¨]</th>
-                                <th>[ÏµÍ³ÃèÊö]</th>
-                                <th>[¼Ü¹¹]</th>
-                                <th>[²Ù×÷]</th>
+                                <th>[ç‰ˆæœ¬]</th>
+                                <th>[IP åœ°å€]</th>
+                                <th>[åºåˆ—å·]</th>
+                                <th>[å¹³å°]</th>
+                                <th>[ç³»ç»Ÿæè¿°]</th>
+                                <th>[æ¶æ„]</th>
+                                <th>[æ“ä½œ]</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -506,9 +510,8 @@
                                     </td>
                                     <td>
                                         <div class="action-buttons">
-                                            <a href="/Term/@agent.AgentId" target="_blank" class="btn-base powershell-btn">PowerShell</a>
-                                            <a href="/Script/@agent.AgentId" target="_blank" class="btn-base script-btn">½Å±¾</a>
-                                            <button onclick="remoteManage('@agent.AgentId')" class="btn-base remote-btn" id="remote-btn-@agent.AgentId">Ô¶³Ì</button>
+                                            <a href="/Script/@agent.AgentId" target="_blank" class="btn-base script-btn">è„šæœ¬</a>
+                                            <button onclick="remoteManage('@agent.AgentId')" class="btn-base remote-btn" id="remote-btn-@agent.AgentId">è¿œç¨‹</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -520,33 +523,33 @@
             else
             {
                 <div class="no-agents">
-                    <h3>ÔİÎŞÁ¬½ÓµÄ Agent</h3>
-                    <p>ÇëÈ·±£ Agent ÒÑÕıÈ·ÅäÖÃ²¢Á¬½Óµ½·şÎñÆ÷</p>
+                    <h3>æš‚æ— è¿æ¥çš„ Agent</h3>
+                    <p>è¯·ç¡®ä¿ Agent å·²æ­£ç¡®é…ç½®å¹¶è¿æ¥åˆ°æœåŠ¡å™¨</p>
                 </div>
             }
         </div>
     </div>
 
     <script>
-                // ×Ô¶¯Ë¢ĞÂÒ³Ãæ (¿ÉÑ¡)
+                // è‡ªåŠ¨åˆ·æ–°é¡µé¢ (å¯é€‰)
                 // setInterval(() => {
              //     window.location.reload();
-                // }, 30000); // 30ÃëË¢ĞÂÒ»´Î
+                // }, 30000); // 30ç§’åˆ·æ–°ä¸€æ¬¡
 
                 async function remoteManage(agentId) {
           const button = document.getElementById(`remote-btn-${agentId}`);
             const originalText = button.innerHTML;
 
                     try {
-             // ½ûÓÃ°´Å¥²¢ÏÔÊ¾µÈ´ı×´Ì¬
+             // ç¦ç”¨æŒ‰é’®å¹¶æ˜¾ç¤ºç­‰å¾…çŠ¶æ€
          button.disabled = true;
-             button.innerHTML = 'Á¬½ÓÖĞ...';
+             button.innerHTML = 'è¿æ¥ä¸­...';
 
               const formData = new FormData();
            formData.append('agentId', agentId);
             formData.append('handler', 'RemoteManage');
 
-               // »ñÈ¡·ÀÎ±ÁîÅÆ
+               // è·å–é˜²ä¼ªä»¤ç‰Œ
              const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
                    if (tokenInput) {
               formData.append('__RequestVerificationToken', tokenInput.value);
@@ -561,34 +564,34 @@
             const result = await response.json();
 
                if (result.success) {
-             // ½âÎö·µ»ØµÄidºÍkey
+             // è§£æè¿”å›çš„idå’Œkey
               const parts = result.data.split(',');
                   if (parts.length === 2) {
             const id = parts[0].trim();
                    const key = parts[1].trim();
 
-              // Ê¹ÓÃ×Ô¶¨ÒåĞ­Òé´ò¿ª±¾µØÓ¦ÓÃ³ÌĞò
+              // ä½¿ç”¨è‡ªå®šä¹‰åè®®æ‰“å¼€æœ¬åœ°åº”ç”¨ç¨‹åº
            const protocolUrl = `jike://remotedesk/${id}/${key}`;
-              console.log('³¢ÊÔ´ò¿ªĞ­ÒéURL:', protocolUrl);
+              console.log('å°è¯•æ‰“å¼€åè®®URL:', protocolUrl);
 
-                   // Ö±½Ó´ò¿ª×Ô¶¨ÒåĞ­Òé
+                   // ç›´æ¥æ‰“å¼€è‡ªå®šä¹‰åè®®
                window.location.href = protocolUrl;
              } else {
                          alert(result.data);
           }
            } else {
-                alert(`Ô¶³Ì¹ÜÀíÁ¬½ÓÊ§°Ü: ${result.error}`);
+                alert(`è¿œç¨‹ç®¡ç†è¿æ¥å¤±è´¥: ${result.error}`);
                  }
            } else {
                  const responseText = await response.text();
-           console.error('ÇëÇóÊ§°Ü:', response.status, responseText);
-               alert(`ÇëÇóÊ§°Ü (${response.status})£¬ÇëÉÔºóÖØÊÔ¡£`);
+           console.error('è¯·æ±‚å¤±è´¥:', response.status, responseText);
+               alert(`è¯·æ±‚å¤±è´¥ (${response.status})ï¼Œè¯·ç¨åé‡è¯•ã€‚`);
               }
              } catch (error) {
-          console.error('Ô¶³Ì¹ÜÀí´íÎó:', error);
-         alert('Ô¶³Ì¹ÜÀíÁ¬½ÓÊ§°Ü£¬ÇëÉÔºóÖØÊÔ¡£');
+          console.error('è¿œç¨‹ç®¡ç†é”™è¯¯:', error);
+         alert('è¿œç¨‹ç®¡ç†è¿æ¥å¤±è´¥ï¼Œè¯·ç¨åé‡è¯•ã€‚');
             } finally {
-          // »Ö¸´°´Å¥×´Ì¬
+          // æ¢å¤æŒ‰é’®çŠ¶æ€
         button.disabled = false;
                 button.innerHTML = originalText;
                   }

@@ -68,7 +68,7 @@ namespace AgentClient
 					try
 					{
 						await Task.Delay(updateCheckInterval, stoppingToken);
-						Log.Debug("执行定期更新检查...");
+						//Log.Debug("执行定期更新检查...");
 						await CheckAndUpdate(serverUrl);
 					}
 					catch (TaskCanceledException)

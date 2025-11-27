@@ -350,17 +350,23 @@ namespace AgentClient
 				{
 					if (File.Exists(Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\RustDesk\rustdesk.exe"))
 						|| File.Exists(Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\RustDesk\rustdesk.exe")))
-						throw new Exception("无法连接RustDesk IPC");
+					{
+						Process.Start("./rustdesk.exe", "--install-service");
+						await Task.Delay(5000);
+						continue;
+					}
+					else
+					{
+						if (installCounter == true)
+							throw new Exception("RustDesk未安装，且自动安装失败");
 
-					if(installCounter == true)
-						throw new Exception("RustDesk未安装，且自动安装失败");
-
-					installCounter = true;
-					Log.Debug($"开始安装rustdesk");
-					var process = Process.Start("RustDesk.exe", "--silent-install");
-					process.WaitForExit();
-					await Task.Delay(10000);
-					continue;
+						installCounter = true;
+						Log.Debug($"开始安装rustdesk");
+						var process = Process.Start("rustdesk.exe", "--silent-install");
+						process.WaitForExit();
+						await Task.Delay(10000);
+						continue;
+					}
 				}
 				Log.Debug($"获取到返回状态：{status.StatusNum} {status.StatusDescription}");
 				if (status != null)

@@ -7,19 +7,25 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 
-if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && args.Contains("--install"))
-{
-	Console.WriteLine("Install Jike Agent...");
-	InstallSystemd();
-	Console.WriteLine("Install Completed");
-	return;
-}
-
-Console.WriteLine("Jike Agent 客户端启动中...");
-
 // 设置工作目录为应用程序基础目录
 var baseDirectory = AppContext.BaseDirectory;
 Directory.SetCurrentDirectory(baseDirectory);
+
+if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+{
+	if(File.Exists("./pwsh/pwsh"))
+		Process.Start("chmod", $"+x ./pwsh/pwsh").WaitForExit();
+
+	if (args.Contains("--install"))
+	{
+		Console.WriteLine("Install Jike Agent...");
+		InstallSystemd();
+		Console.WriteLine("Install Completed");
+		return;
+	}
+}
+
+Console.WriteLine("Jike Agent 客户端启动中...");
 
 // 创建日志目录
 var logDirectory = Path.Combine(baseDirectory, "logs");

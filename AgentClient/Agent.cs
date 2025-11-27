@@ -89,65 +89,6 @@ internal class Agent
 					}
 				};
 
-				connection.On<string>("CaptureScreen", async requestId =>
-				{
-					Log.Information("收到CaptureScreen请求");
-					try
-					{
-						ScreenCapture.StartCapture();
-						await Task.Delay(2000);
-						if (File.Exists("screenshot.jpg"))
-						{
-							var data = File.ReadAllBytes("screenshot.jpg");
-							await connection.SendAsync("CaptureScreenCallback", requestId, data);
-						}
-						else
-						{
-							Log.Error("截图文件不存在");
-							await connection.SendAsync("CaptureScreenCallback", requestId, Array.Empty<byte>());
-						}
-					}
-					catch (Exception ex)
-					{
-						Log.Error(ex, $"截屏失败: {ex.Message}");
-					}
-				});
-
-				//connection.On<string>("RegisterTerminal", async terminalId =>
-				//{
-				//	Log.Information("收到RegisterTerminal请求");
-				//	try
-				//	{
-				//		var ps = PowerShell.Create();
-				//		shells.TryAdd(terminalId, ps);
-
-				//		if (connection.State == HubConnectionState.Connected)
-				//		{
-				//			await connection.SendAsync("PowerShellOutput", terminalId, GetPowerShellPath(ps));
-				//		}
-				//	}
-				//	catch (Exception ex)
-				//	{
-				//		Log.Error(ex, $"注册终端失败 {terminalId}: {ex.Message}");
-				//	}
-				//});
-
-				//connection.On<string>("TerminalClosed", async terminalId =>
-				//{
-				//	Log.Information("收到TerminalClosed请求");
-				//	try
-				//	{
-				//		if (shells.TryRemove(terminalId, out var ps))
-				//		{
-				//			ps.Dispose();
-				//		}
-				//	}
-				//	catch (Exception ex)
-				//	{
-				//		Log.Error(ex, $"关闭终端失败 {terminalId}: {ex.Message}");
-				//	}
-				//});
-
 				connection.On("CheckUpdate", () =>
 				{
 					Log.Information("收到CheckUpdate请求");
@@ -160,27 +101,26 @@ internal class Agent
 					try
 					{
 						var result = await RustDeskIpcUtils.StartRemoteDesk(server, key);
-						await connection.SendAsync("RemoteDeskCallback", callId, result);
-					}
-					catch(Exception ex)
-					{
-						await connection.SendAsync("RemoteDeskCallback", callId, ex.Message);
-					}
-					
-				});
-
-				connection.On<string, string, string>("InstallRemoteDesk", async (callId, server, key) =>
-				{
-					Log.Information("收到安装RemoteDesk请求");
-					try
-					{
-						var process = Process.Start("RustDesk.exe", "--silent-install");
-						process.WaitForExit();
-						await connection.SendAsync("InstallRemoteDeskCallback", callId, "ok");
+						try
+						{
+							await connection.SendAsync("RemoteDeskCallback", callId, result);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, $"发送启动RustDesk结果失败: {sendEx.Message}");
+						}
 					}
 					catch (Exception ex)
 					{
-						await connection.SendAsync("InstallRemoteDeskCallback", callId, ex.Message);
+						Log.Error(ex, $"启动RemoteDesk失败 {callId}: {ex.Message}");
+						try
+						{
+							await connection.SendAsync("RemoteDeskCallback", callId, ex.Message);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, $"发送RemoteDeskCallback失败: {sendEx.Message}");
+						}
 					}
 				});
 
@@ -192,7 +132,6 @@ internal class Agent
 						string outputText = "执行结果为空。";
 						Log.Information("执行脚本:\n" + script);
 						outputText = ExecuteScriptNatively(script);
-
 						try
 						{
 							await connection.SendAsync("PowershellScriptCallback", callId, outputText, stoppingToken);
@@ -205,12 +144,20 @@ internal class Agent
 					catch (Exception ex)
 					{
 						Log.Error(ex, $"执行PowerShell脚本失败 {callId}: {ex.Message}");
+						try
+						{
+							await connection.SendAsync("PowershellScriptCallback", callId, ex.Message, stoppingToken);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, $"发送PowershellScriptCallback失败: {sendEx.Message}");
+						}
 					}
 				});
 
 				string ExecuteScriptNatively(string script)
 				{
-					var tempDir = System.IO.Path.GetTempPath();
+					var tempDir = Directory.GetCurrentDirectory();
 					var fileId = Guid.NewGuid();
 					var scriptFile = fileId + ".ps1";
 					var scriptPath = System.IO.Path.Combine(tempDir, scriptFile);
@@ -244,6 +191,8 @@ try {{
 						var cmd = "powershell";
 						if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 							cmd = "./pwsh/pwsh";
+						else if (File.Exists("./pwsh/pwsh.exe"))
+							cmd = "./pwsh/pwsh.exe";
 						var startInfo = new System.Diagnostics.ProcessStartInfo(cmd, $"-NoProfile -ExecutionPolicy Bypass -File \"{wrapperPath}\"")
 						{
 							UseShellExecute = false,
@@ -311,20 +260,20 @@ try {{
 					}
 				}
 
-				string GetUniqeId()
-				{
-					var mac = GetFirstPhysicalMac();
-					if (mac == null)
-						return "None";
-					else
-					{
-						byte[] bytes = Encoding.UTF8.GetBytes($"{mac}");
-						byte[] hash = MD5.HashData(bytes);
-						return Convert.ToHexString(hash).ToLowerInvariant();
-					}
-				}
+				//string GetUniqeId()
+				//{
+				//	var mac = GetFirstPhysicalMac();
+				//	if (mac == null)
+				//		return "None";
+				//	else
+				//	{
+				//		byte[] bytes = Encoding.UTF8.GetBytes($"{mac}");
+				//		byte[] hash = MD5.HashData(bytes);
+				//		return Convert.ToHexString(hash).ToLowerInvariant();
+				//	}
+				//}
 
-				async Task RegisterClient() 
+				async Task RegisterClient()
 				{
 					int platform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 1 :
 						RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 2 :
@@ -332,7 +281,7 @@ try {{
 					string osArch = RuntimeInformation.OSArchitecture.ToString();
 					string osDesc = RuntimeInformation.OSDescription;
 					await connection.InvokeAsync("RegisterAgent",
-						GetUniqeId(),
+						GetMacAddress(),
 						Settings.Version,
 						GetAllIP(),
 						group,
@@ -343,30 +292,32 @@ try {{
 					Log.Information("代理注册成功");
 				}
 
-				string? GetFirstPhysicalMac()
-				{
-					try
-					{
-						var nic = NetworkInterface.GetAllNetworkInterfaces()
-									.OrderBy(n => n.GetPhysicalAddress().ToString() == "" ? 1 : 0)
-									.ThenBy(n => n.Id)
-									.FirstOrDefault(n =>
-										n.OperationalStatus == OperationalStatus.Up &&
-										n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
-										!n.Description.ToLowerInvariant().Contains("virtual") &&
-										!n.Description.ToLowerInvariant().Contains("vmware") &&
-										!n.Description.ToLowerInvariant().Contains("hyper-v"));
 
-						var mac = nic?.GetPhysicalAddress().ToString();
-						if (!string.IsNullOrWhiteSpace(mac) && mac.Length == 12)
-							return mac; // 例：E41D2D3A4B5C
-					}
-					catch (Exception ex)
-					{
 
-					}
-					return null;
-				}
+				//string? GetFirstPhysicalMac()
+				//{
+				//	try
+				//	{
+				//		var nic = NetworkInterface.GetAllNetworkInterfaces()
+				//					.OrderBy(n => n.GetPhysicalAddress().ToString() == "" ? 1 : 0)
+				//					.ThenBy(n => n.Id)
+				//					.FirstOrDefault(n =>
+				//						n.OperationalStatus == OperationalStatus.Up &&
+				//						n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+				//						!n.Description.ToLowerInvariant().Contains("virtual") &&
+				//						!n.Description.ToLowerInvariant().Contains("vmware") &&
+				//						!n.Description.ToLowerInvariant().Contains("hyper-v"));
+
+				//		var mac = nic?.GetPhysicalAddress().ToString();
+				//		if (!string.IsNullOrWhiteSpace(mac) && mac.Length == 12)
+				//			return mac; // 例：E41D2D3A4B5C
+				//	}
+				//	catch (Exception ex)
+				//	{
+
+				//	}
+				//	return null;
+				//}
 
 				while (!stoppingToken.IsCancellationRequested)
 				{
@@ -453,6 +404,114 @@ try {{
 			return IPAddress.None.ToString();
 		}
 	}
+
+	string GetMacAddress()
+	{
+		var macs = NetworkInterface.GetAllNetworkInterfaces()
+			.Where(ni =>
+				ni.OperationalStatus == OperationalStatus.Up &&
+				ni.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+				!ni.Description.ToLowerInvariant().Contains("virtual") &&
+				!ni.Description.ToLowerInvariant().Contains("vmware") &&
+				!ni.Description.ToLowerInvariant().Contains("vbox") &&
+				!ni.Description.ToLowerInvariant().Contains("hyper-v") &&
+				!ni.Description.ToLowerInvariant().Contains("docker"))
+			.Select(ni => ni.GetPhysicalAddress().ToString())
+			.Where(mac => !string.IsNullOrEmpty(mac) && mac != "000000000000")
+			.OrderBy(mac => mac)
+			.FirstOrDefault();
+
+		return macs?.ToUpperInvariant() ?? "none";
+	}
+
+	/*
+	 * python
+	 import psutil
+import re
+
+def get_stable_mac():
+    macs = []
+    for iface, addrs in psutil.net_if_addrs().items():
+        # Skip loopback
+        if iface.startswith('lo'):
+            continue
+        # Skip virtual
+        if any(kw in iface.lower() for kw in ['virtual', 'vmware', 'vbox', 'docker', 'bridge']):
+            continue
+        for addr in addrs:
+            if addr.family == psutil.AF_LINK:  # MAC address
+                mac = addr.address.replace(':', '').replace('-', '').upper()
+                if mac and mac != "000000000000":
+                    macs.append(mac)
+    macs.sort()  # Lexicographic order
+    return macs[0] if macs else ""
+
+	nodejs
+const os = require('os');
+
+function getStableMac() {
+  const ifaces = os.networkInterfaces();
+  const macs = [];
+
+  for (const [name, nets] of Object.entries(ifaces)) {
+    if (name.startsWith('lo')) continue;
+    if (/virtual|vmware|vbox|docker|bridge/i.test(name)) continue;
+
+    for (const net of nets) {
+      if (net.family === 'IPv4' || net.family === 4) continue; // skip IPv4
+      if (net.mac && net.mac !== '00:00:00:00:00:00') {
+        const cleanMac = net.mac.replace(/[:-]/g, '').toUpperCase();
+        macs.push(cleanMac);
+      }
+    }
+  }
+
+  macs.sort(); // Lexicographic sort
+  return macs[0] || '';
+}
+
+
+	go:
+
+package main
+
+import (
+	"fmt"
+	"net"
+	"sort"
+	"strings"
+)
+
+func getStableMac() string {
+	var macs []string
+	interfaces, _ := net.Interfaces()
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		desc := strings.ToLower(iface.Name)
+		if strings.Contains(desc, "virtual") ||
+			strings.Contains(desc, "vmware") ||
+			strings.Contains(desc, "vbox") ||
+			strings.Contains(desc, "docker") ||
+			strings.Contains(desc, "bridge") {
+			continue
+		}
+		mac := iface.HardwareAddr.String()
+		if mac != "" && mac != "00:00:00:00:00:00" {
+			clean := strings.ReplaceAll(strings.ToUpper(mac), ":", "")
+			macs = append(macs, clean)
+		}
+	}
+	sort.Strings(macs)
+	if len(macs) > 0 {
+		return macs[0]
+	}
+	return ""
+}
+
+	 */
+
 }
 
 public class RetryPolicy : IRetryPolicy

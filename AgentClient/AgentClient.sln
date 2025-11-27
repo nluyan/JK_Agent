@@ -1,13 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36414.22
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11205.157 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentClient", "AgentClient.csproj", "{5F5A0D08-0F47-3797-F3D2-25C3C13A4C7C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Updater", "..\Updater\Updater.csproj", "{FA17D7F6-559E-4D66-8213-0E19187CC5B4}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScreenCapture", "..\ScreenCapture\ScreenCapture.csproj", "{FC1EA916-2FE5-447F-B67A-3A7C176B062C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,10 +21,6 @@ Global
 		{FA17D7F6-559E-4D66-8213-0E19187CC5B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FA17D7F6-559E-4D66-8213-0E19187CC5B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FA17D7F6-559E-4D66-8213-0E19187CC5B4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FC1EA916-2FE5-447F-B67A-3A7C176B062C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FC1EA916-2FE5-447F-B67A-3A7C176B062C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FC1EA916-2FE5-447F-B67A-3A7C176B062C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FC1EA916-2FE5-447F-B67A-3A7C176B062C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

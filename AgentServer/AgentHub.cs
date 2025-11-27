@@ -9,7 +9,6 @@ namespace AgentServer
 	public class AgentHub(AgentService service) : Hub
 	{
 		static readonly ConcurrentDictionary<string, TaskCompletionSource<List<string>>> completionCallbacks = new();
-		static readonly ConcurrentDictionary<Guid, TaskCompletionSource<string>> powershellScriptCallbacks = new();
 
 		public async Task RegisterTerminal(string agentId)
 		{

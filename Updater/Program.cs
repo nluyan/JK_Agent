@@ -21,8 +21,7 @@ namespace Updater
 				if (Directory.Exists("temp"))
 				{
 					ServiceHelper.StopService("JikeAgent");
-					Thread.Sleep(2000);
-
+					Thread.Sleep(5000);
 					foreach (var process in Process.GetProcessesByName("AgentClient"))
 					{
 						try
@@ -31,7 +30,7 @@ namespace Updater
 						}
 						catch { }
 					}
-
+					Thread.Sleep(5000);
 					CopyDirectory(Path.Combine(baseDirectory, "temp"), baseDirectory);
 				}
 				else
