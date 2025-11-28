@@ -24,22 +24,7 @@ namespace AgentServer.Pages
 
         public async Task<IActionResult> OnPostAsync(string agentId, string handler)
         {
-            if (handler == "CaptureScreen")
-            {
-                try
-                {
-                    var imageData = await _agentService.CaptureScreen(new ScreenDTO { AgentId = agentId });
-                    return new FileContentResult(imageData, "image/jpg")
-                    {
-                        FileDownloadName = $"screenshot_{agentId}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"
-                    };
-                }
-                catch (Exception ex)
-                {
-                    return new JsonResult(new { success = false, error = ex.Message });
-                }
-            }
-            else if (handler == "RemoteManage")
+            if (handler == "RemoteManage")
             {
                 try
                 {

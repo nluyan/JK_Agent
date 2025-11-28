@@ -31,7 +31,7 @@ namespace JikeStarter
 						Process.Start(new ProcessStartInfo
 						{
 							WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-							FileName = "remotedesk.exe",
+							FileName = "rustdesk.exe",
 							Arguments = $"--connect {id} {pwd}".TrimEnd(),
 							UseShellExecute = false,
 						});
@@ -47,7 +47,7 @@ namespace JikeStarter
 						Process.Start(new ProcessStartInfo
 						{
 							WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
-							FileName = "remotedesk.exe",
+							FileName = "rustdesk.exe",
 							Arguments = $"--file-transfer {id} {pwd}".TrimEnd(),
 							UseShellExecute = false,
 						});

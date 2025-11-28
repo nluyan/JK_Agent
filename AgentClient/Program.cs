@@ -18,9 +18,8 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 
 	if (args.Contains("--install"))
 	{
-		Console.WriteLine("Install Jike Agent...");
 		InstallSystemd();
-		Console.WriteLine("Install Completed");
+		Console.WriteLine("jike.service is installed.");
 		return;
 	}
 }

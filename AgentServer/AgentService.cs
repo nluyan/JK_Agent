@@ -57,6 +57,7 @@ namespace AgentServer
 
 		public List<AgentModel> GetAgents()
 		{
+			Console.WriteLine("获取Agent列表，共计 " + agents.Count + " 个Agent");
 			return agents.Values.ToList();
 		}
 		
@@ -91,6 +92,8 @@ namespace AgentServer
 
 		public async Task<ExecuteResult> ExecutePowershellScript(ExecuteDTO dto, string script)
 		{
+			Console.WriteLine($"执行PowerShell脚本: {JsonSerializer.Serialize(dto)}");
+
 			var agent = GetAgentByDTO(dto);
 
 			var requestId = Guid.NewGuid().ToString();
@@ -123,39 +126,9 @@ namespace AgentServer
 			}
 		}
 
-		public async Task<byte[]> CaptureScreen(ScreenDTO dto)
-		{
-			var agent = GetAgentByDTO(dto);
-			var requestId = Guid.NewGuid().ToString();
-			var tcs = new TaskCompletionSource<byte[]>();
-			_captureCallbacks.TryAdd(requestId, tcs);
-
-			try
-			{
-				await _hubContext.Clients.Client(agent.AgentId).SendAsync("CaptureScreen", requestId);
-				var task = await Task.WhenAny(tcs.Task, Task.Delay(50000));
-				if (task == tcs.Task)
-				{
-					var result = await tcs.Task;
-					return result;
-				}
-				else
-				{
-					throw new TimeoutException("截屏执行超时，Agent未在30秒内返回结果");
-				}
-			}
-			catch (Exception ex)
-			{
-				throw new Exception($"截屏失败: {ex.Message}");
-			}
-			finally
-			{
-				_captureCallbacks.TryRemove(requestId, out _);
-			}
-		}
-
 		public async Task<string> RemoteDesk(RemoteDeskDTO dto, string server, string key)
 		{
+			Console.WriteLine($"执行RemoteDesk连接: {JsonSerializer.Serialize(dto)}");
 			var agent = GetAgentByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();

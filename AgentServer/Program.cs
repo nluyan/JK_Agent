@@ -180,8 +180,6 @@ app.MapGet("/api/agent/list", (AgentService service)
 	=> service.GetAgents());//.RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
 	=> await service.ExecutePowershellScript(dto, dto.Script));//.RequireAuthorization("ApiPolicy");
-app.MapPost("/api/agent/screen", async (AgentService service, ScreenDTO dto)
-	=> Results.File(await service.CaptureScreen(dto), "image/jpeg", "screen.jpg"));//.RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
 	=> await service.RemoteDesk(dto, builder.Configuration["RemoteDesk:Server"], builder.Configuration["RemoteDesk:Key"]));//.RequireAuthorization("ApiPolicy");
 
