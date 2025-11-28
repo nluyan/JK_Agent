@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"path"
 
-	"github.com/quic-go/webtransport-go"
+	// "github.com/quic-go/webtransport-go" // Disabled for Windows 7 compatibility
 	"github.com/coder/websocket"
 )
 
@@ -140,15 +140,16 @@ func NewHTTPConnection(ctx context.Context, address string, options ...func(*htt
 	// Select the best connection
 	var conn Connection
 	switch {
-	case httpConn.hasTransport(TransportWebTransports) && negotiateResponse.hasTransport(TransportWebTransports):
-		var d webtransport.Dialer
-		_, wtConn, err := d.Dial(ctx, reqURL.String(), req.Header)
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO think about if the API should give the possibility to cancel this connections
-		conn = newWebTransportsConnection(context.Background(), negotiateResponse.ConnectionID, wtConn)
+	// WebTransport disabled for Windows 7 compatibility
+	// case httpConn.hasTransport(TransportWebTransports) && negotiateResponse.hasTransport(TransportWebTransports):
+	// 	var d webtransport.Dialer
+	// 	_, wtConn, err := d.Dial(ctx, reqURL.String(), req.Header)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	//
+	// 	// TODO think about if the API should give the possibility to cancel this connections
+	// 	conn = newWebTransportsConnection(context.Background(), negotiateResponse.ConnectionID, wtConn)
 
 	case httpConn.hasTransport(TransportWebSockets) && negotiateResponse.hasTransport(TransportWebSockets):
 		wsURL := reqURL

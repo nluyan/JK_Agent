@@ -1,6 +1,6 @@
 module github.com/philippseith/signalr
 
-go 1.24
+go 1.20
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.38.0
-	github.com/quic-go/webtransport-go v0.9.0
+	github.com/quic-go/webtransport-go v0.6.0
 	github.com/stretchr/testify v1.10.0
 	github.com/teivah/onecontext v1.3.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
@@ -20,15 +20,20 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
+	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
+	github.com/onsi/ginkgo/v2 v2.23.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.54.1 // indirect
+	github.com/quic-go/qpack v0.4.0 // indirect
+	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
+	github.com/quic-go/quic-go v0.40.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	go.uber.org/mock v0.5.0 // indirect
+	go.uber.org/automaxprocs v1.6.0 // indirect
+	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63 // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect

@@ -1,3 +1,5 @@
+//go:build windows
+
 package agent
 
 import (
@@ -10,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -78,11 +79,6 @@ func NewRustDeskClient() *RustDeskClient {
 
 // SendRequest 发送请求并返回响应
 func (c *RustDeskClient) SendRequest(ctx context.Context, request interface{}) (map[string]interface{}, error) {
-	// 只在 Windows 上支持
-	if runtime.GOOS != "windows" {
-		return nil, errors.New("RustDesk IPC only supported on Windows")
-	}
-
 	// 连接到命名管道
 	conn, err := winio.DialPipe(c.pipeName, &c.timeout)
 	if err != nil {
@@ -164,10 +160,6 @@ func (c *RustDeskClient) SendRequest(ctx context.Context, request interface{}) (
 
 // SendRequestWithoutResponse 发送请求不等待响应
 func (c *RustDeskClient) SendRequestWithoutResponse(ctx context.Context, request interface{}) error {
-	if runtime.GOOS != "windows" {
-		return errors.New("RustDesk IPC only supported on Windows")
-	}
-
 	conn, err := winio.DialPipe(c.pipeName, &c.timeout)
 	if err != nil {
 		log.Error().Err(err).Msg("Connection to RustDesk IPC timed out")
