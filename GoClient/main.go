@@ -22,8 +22,8 @@ const (
 	linuxServiceName = "jike.service"
 	linuxUnitPath    = "/etc/systemd/system/" + linuxServiceName
 	pwshRelativePath = "pwsh/pwsh"
-	defaultServerURL = "http://zabbix.jikefw.com:17037/agenthub" // 默认服务器URL
-	defaultGroup     = "default"                                 // 默认组
+	defaultServerURL = "http://zabbix.jikefw.com:17037" // 默认服务器URL
+	defaultGroup     = "default"                        // 默认组
 )
 
 var systemLogger service.Logger
@@ -98,7 +98,8 @@ func main() {
 	}
 
 	// 创建Agent
-	program.agent = agent.NewAgent(settings.ServerURL, settings.Group, program.logger)
+
+	program.agent = agent.NewAgent(settings.ServerURL+"/AgentHub", settings.Group, program.logger)
 
 	// 创建Updater
 	checkInterval := time.Duration(settings.CheckUpdate) * time.Second
