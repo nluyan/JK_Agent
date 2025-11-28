@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"jkagent/goclient/agent"
+	"jkagent/goclient/config"
 	"log"
 	"os"
 	"os/exec"
@@ -19,6 +22,8 @@ const (
 	linuxServiceName = "jike.service"
 	linuxUnitPath    = "/etc/systemd/system/" + linuxServiceName
 	pwshRelativePath = "pwsh/pwsh"
+	defaultServerURL = "http://zabbix.jikefw.com:17037/agenthub" // 默认服务器URL
+	defaultGroup     = "default"                                 // 默认组
 )
 
 var systemLogger service.Logger
@@ -27,6 +32,9 @@ type serviceProgram struct {
 	logger     zerolog.Logger
 	stopSignal chan struct{}
 	stopOnce   sync.Once
+	agent      *agent.Agent
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func main() {
@@ -53,6 +61,29 @@ func main() {
 		logger:     zerolog.New(logWriter).With().Timestamp().Logger(),
 		stopSignal: make(chan struct{}),
 	}
+
+	// 创建上下文
+	program.ctx, program.cancel = context.WithCancel(context.Background())
+
+	// 获取服务器URL和组名（从环境变量或使用默认值）
+	serverURL := os.Getenv("AGENT_SERVER_URL")
+	if serverURL == "" {
+		serverURL = defaultServerURL
+	}
+
+	groupName := os.Getenv("AGENT_GROUP")
+	if groupName == "" {
+		groupName = defaultGroup
+	}
+
+	// 创建Agent
+	program.agent = agent.NewAgent(serverURL, groupName, program.logger)
+
+	// 设置CheckUpdate事件处理器
+	program.agent.SetOnCheckUpdate(func() {
+		program.logInfo("收到CheckUpdate事件")
+		// 这里可以添加检查更新的逻辑
+	})
 
 	config := &service.Config{
 		Name:        "JikeAgent",
@@ -84,25 +115,29 @@ func (p *serviceProgram) Start(s service.Service) error {
 }
 
 func (p *serviceProgram) run() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
 	p.logInfo("服务进入运行循环")
-	for {
-		select {
-		case <-ticker.C:
-			//p.logInfo(fmt.Sprintf("心跳：%s", time.Now().Format(time.RFC3339)))
+	p.logInfo(fmt.Sprintf("版本: %s", config.Default.Version))
+	p.logInfo(fmt.Sprintf("MAC地址: %s", agent.GetMacAddress()))
+	p.logInfo(fmt.Sprintf("IP地址: %s", agent.GetAllIP()))
+	p.logInfo(fmt.Sprintf("平台: %d, 架构: %s, OS: %s", agent.GetPlatform(), agent.GetOSArch(), agent.GetOSDesc()))
 
-		case <-p.stopSignal:
-			p.logInfo("服务停止信号被触发")
-			return
-		}
+	// 启动Agent
+	if err := p.agent.Start(p.ctx); err != nil {
+		p.logError("Agent服务运行失败", err)
 	}
 }
 
 func (p *serviceProgram) Stop(s service.Service) error {
 	p.logInfo("服务收到停止请求")
 	p.stopOnce.Do(func() {
+		// 停止Agent
+		if p.agent != nil {
+			p.agent.Stop()
+		}
+		// 取消上下文
+		if p.cancel != nil {
+			p.cancel()
+		}
 		close(p.stopSignal)
 	})
 	return nil
