@@ -67,8 +67,13 @@ func main() {
 	program.ctx, program.cancel = context.WithCancel(context.Background())
 
 	// 加载配置文件
+	workDir, _ := os.Getwd()
+	configFile := filepath.Join(workDir, "appsettings.json")
+	fmt.Printf("尝试加载配置文件: %s\n", configFile)
+	
 	settings, err := config.LoadFromFile("")
 	if err != nil {
+		fmt.Printf("配置文件加载失败: %v，使用默认配置\n", err)
 		program.logger.Warn().Err(err).Msg("加载配置文件失败，使用默认配置")
 		// 使用默认值或环境变量
 		settings = &config.Settings{
@@ -84,6 +89,7 @@ func main() {
 			settings.Group = defaultGroup
 		}
 	} else {
+		fmt.Printf("✓ 配置加载成功 - ServerUrl: %s, Group: %s\n", settings.ServerURL, settings.Group)
 		program.logger.Info().Msgf("配置加载成功 - ServerUrl: %s, Group: %s", settings.ServerURL, settings.Group)
 	}
 
