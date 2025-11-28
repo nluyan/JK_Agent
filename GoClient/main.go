@@ -33,6 +33,7 @@ type serviceProgram struct {
 	stopSignal chan struct{}
 	stopOnce   sync.Once
 	agent      *agent.Agent
+	updater    *agent.Updater
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
@@ -65,24 +66,51 @@ func main() {
 	// 创建上下文
 	program.ctx, program.cancel = context.WithCancel(context.Background())
 
-	// 获取服务器URL和组名（从环境变量或使用默认值）
-	serverURL := os.Getenv("AGENT_SERVER_URL")
-	if serverURL == "" {
-		serverURL = defaultServerURL
+	// 加载配置文件
+	settings, err := config.LoadFromFile("")
+	if err != nil {
+		program.logger.Warn().Err(err).Msg("加载配置文件失败，使用默认配置")
+		// 使用默认值或环境变量
+		settings = &config.Settings{
+			Version:     config.Default.Version,
+			ServerURL:   os.Getenv("AGENT_SERVER_URL"),
+			Group:       os.Getenv("AGENT_GROUP"),
+			CheckUpdate: 0, // 使用默认值
+		}
+		if settings.ServerURL == "" {
+			settings.ServerURL = defaultServerURL
+		}
+		if settings.Group == "" {
+			settings.Group = defaultGroup
+		}
+	} else {
+		program.logger.Info().Msgf("配置加载成功 - ServerUrl: %s, Group: %s", settings.ServerURL, settings.Group)
 	}
 
-	groupName := os.Getenv("AGENT_GROUP")
-	if groupName == "" {
-		groupName = defaultGroup
+	// 验证配置
+	if settings.ServerURL == "" {
+		program.logger.Error().Msg("ServerURL为空，无法启动服务")
+		os.Exit(1)
+	}
+	if settings.Group == "" {
+		program.logger.Error().Msg("Group为空，无法启动服务")
+		os.Exit(1)
 	}
 
 	// 创建Agent
-	program.agent = agent.NewAgent(serverURL, groupName, program.logger)
+	program.agent = agent.NewAgent(settings.ServerURL, settings.Group, program.logger)
 
-	// 设置CheckUpdate事件处理器
+	// 创建Updater
+	checkInterval := time.Duration(settings.CheckUpdate) * time.Second
+	if checkInterval == 0 {
+		checkInterval = 10 * time.Minute // 默认10分钟
+	}
+	program.updater = agent.NewUpdater(settings.ServerURL, settings.Group, checkInterval, program.logger)
+
+	// 设置CheckUpdate事件处理器（手动触发更新检查）
 	program.agent.SetOnCheckUpdate(func() {
-		program.logInfo("收到CheckUpdate事件")
-		// 这里可以添加检查更新的逻辑
+		program.logInfo("收到手动更新检查请求")
+		program.updater.CheckNow()
 	})
 
 	config := &service.Config{
@@ -121,6 +149,11 @@ func (p *serviceProgram) run() {
 	p.logInfo(fmt.Sprintf("IP地址: %s", agent.GetAllIP()))
 	p.logInfo(fmt.Sprintf("平台: %d, 架构: %s, OS: %s", agent.GetPlatform(), agent.GetOSArch(), agent.GetOSDesc()))
 
+	// 启动更新检查器
+	if p.updater != nil {
+		p.updater.Start(p.ctx)
+	}
+
 	// 启动Agent
 	if err := p.agent.Start(p.ctx); err != nil {
 		p.logError("Agent服务运行失败", err)
@@ -130,6 +163,10 @@ func (p *serviceProgram) run() {
 func (p *serviceProgram) Stop(s service.Service) error {
 	p.logInfo("服务收到停止请求")
 	p.stopOnce.Do(func() {
+		// 停止更新检查器
+		if p.updater != nil {
+			p.updater.Stop()
+		}
 		// 停止Agent
 		if p.agent != nil {
 			p.agent.Stop()
