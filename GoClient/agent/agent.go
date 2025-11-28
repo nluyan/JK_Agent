@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"jkagent/goclient/config"
+	"runtime"
 	"time"
 
 	"github.com/philippseith/signalr"
@@ -207,12 +208,45 @@ func (r *AgentReceiver) RemoteDesk(callID, server, key string) {
 		Str("key", key).
 		Msg("收到RemoteDesk请求")
 
-	// 启动远程桌面（这里需要实现RustDesk IPC工具）
-	// 由于没有提供RustDeskIpcUtils的实现，这里返回一个占位符
-	result := fmt.Sprintf("RemoteDesk功能暂未实现: server=%s, key=%s", server, key)
-
-	// 发送回调
+	// 启动远程桌面
 	go func() {
+		var result string
+		
+		// 检查平台支持
+		if runtime.GOOS == "linux" {
+			r.agent.logger.Warn().
+				Str("callID", callID).
+				Str("platform", runtime.GOOS).
+				Msg("Linux平台不支持远程桌面功能")
+			result = "错误：Linux平台不支持远程桌面功能"
+			
+			// 发送回调
+			if err := <-r.agent.client.Send("RemoteDeskCallback", callID, result); err != nil {
+				r.agent.logger.Error().
+					Err(err).
+					Str("callID", callID).
+					Msg("发送RemoteDeskCallback失败")
+			}
+			return
+		}
+		
+		// 调用 RustDesk IPC
+		idAndPassword, err := StartRemoteDesk(server, key)
+		if err != nil {
+			r.agent.logger.Error().
+				Err(err).
+				Str("callID", callID).
+				Msg("启动RemoteDesk失败")
+			result = err.Error()
+		} else {
+			result = idAndPassword
+			r.agent.logger.Info().
+				Str("callID", callID).
+				Str("result", result).
+				Msg("RemoteDesk启动成功")
+		}
+
+		// 发送回调
 		if err := <-r.agent.client.Send("RemoteDeskCallback", callID, result); err != nil {
 			r.agent.logger.Error().
 				Err(err).

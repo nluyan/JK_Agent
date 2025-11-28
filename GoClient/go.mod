@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/coder/websocket v1.8.13 // indirect
 	github.com/go-kit/log v0.2.1 // indirect

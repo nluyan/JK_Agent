@@ -32,7 +32,7 @@ namespace JikeStarter
 						{
 							WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
 							FileName = "rustdesk.exe",
-							Arguments = $"--connect {id} {pwd}".TrimEnd(),
+							Arguments = $"--connect {id} --password {pwd}".TrimEnd(),
 							UseShellExecute = false,
 						});
 					}
