@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -12,7 +14,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const logRetentionDays = 15
+const (
+	logRetentionDays = 15
+	linuxServiceName = "jike.service"
+	linuxUnitPath    = "/etc/systemd/system/" + linuxServiceName
+	pwshRelativePath = "pwsh/pwsh"
+)
 
 var systemLogger service.Logger
 
@@ -23,6 +30,14 @@ type serviceProgram struct {
 }
 
 func main() {
+	if runtime.GOOS == "linux" && hasInstallFlag(os.Args[1:]) {
+		if err := installSystemdService(); err != nil {
+			log.Fatalf("安装 systemd 服务失败: %v", err)
+		}
+		fmt.Printf("%s 已安装。\n", linuxServiceName)
+		return
+	}
+
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("获取工作目录失败: %v", err)
@@ -40,9 +55,9 @@ func main() {
 	}
 
 	config := &service.Config{
-		Name:        "JKAgentGoClientService",
-		DisplayName: "JK Agent Go Client Service",
-		Description: "Go 语言编写的 Windows 服务示例，负责持续运行并写入日志。",
+		Name:        "JikeAgent",
+		DisplayName: "JiKeAgent",
+		Description: "JikeAgent",
 	}
 
 	svc, err := service.New(program, config)
@@ -112,6 +127,101 @@ func (p *serviceProgram) logError(message string, err error) {
 			systemLogger.Error(message)
 		}
 	}
+}
+
+func hasInstallFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--install" {
+			return true
+		}
+	}
+	return false
+}
+
+func installSystemdService() error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("install 仅支持 Linux 平台")
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("获取可执行文件失败: %w", err)
+	}
+
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return fmt.Errorf("解析可执行文件失败: %w", err)
+	}
+
+	if _, err := os.Stat(exePath); err != nil {
+		return fmt.Errorf("%s 不存在: %w", exePath, err)
+	}
+
+	if _, err := os.Stat(linuxUnitPath); err == nil {
+		return fmt.Errorf("%s 已存在，请先删除旧单元", linuxUnitPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("检查 %s 时失败: %w", linuxUnitPath, err)
+	}
+
+	workingDir := filepath.Dir(exePath)
+	content := fmt.Sprintf(`[Unit]
+Description=Jike Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=%s
+ExecStart=%s
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=JikeAgent
+
+[Install]
+WantedBy=multi-user.target
+`, workingDir, exePath)
+
+	if err := os.WriteFile(linuxUnitPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("写入 %s 失败: %w", linuxUnitPath, err)
+	}
+
+	pwshPath := filepath.Join(workingDir, pwshRelativePath)
+	if err := ensurePwshExecutable(pwshPath); err != nil {
+		return err
+	}
+	if err := runCommand("systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	if err := runCommand("systemctl", "enable", linuxServiceName); err != nil {
+		return err
+	}
+	if err := runCommand("systemctl", "start", linuxServiceName); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func runCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("执行 %s %v 失败: %w: %s", name, args, err, string(output))
+	}
+	return nil
+}
+
+func ensurePwshExecutable(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%s 不存在: %w", path, err)
+		}
+		return fmt.Errorf("检查 %s 时失败: %w", path, err)
+	}
+
+	return runCommand("chmod", "+x", path)
 }
 
 type dailyLogWriter struct {
