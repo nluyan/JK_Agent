@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,25 +9,33 @@ import (
 	"time"
 
 	"github.com/kardianos/service"
+	"github.com/rs/zerolog"
 )
+
+const logRetentionDays = 15
 
 var systemLogger service.Logger
 
 type serviceProgram struct {
-	fileLogger *log.Logger
+	logger     zerolog.Logger
 	stopSignal chan struct{}
 	stopOnce   sync.Once
 }
 
 func main() {
-	logWriter, err := createLogWriter()
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("获取工作目录失败: %v", err)
+	}
+
+	logWriter, err := newDailyLogWriter(workingDirectory, logRetentionDays)
 	if err != nil {
 		log.Fatalf("日志初始化失败: %v", err)
 	}
 	defer logWriter.Close()
 
 	program := &serviceProgram{
-		fileLogger: log.New(logWriter, "", log.LstdFlags),
+		logger:     zerolog.New(logWriter).With().Timestamp().Logger(),
 		stopSignal: make(chan struct{}),
 	}
 
@@ -69,7 +76,8 @@ func (p *serviceProgram) run() {
 	for {
 		select {
 		case <-ticker.C:
-			p.logInfo(fmt.Sprintf("心跳：%s", time.Now().Format(time.RFC3339)))
+			//p.logInfo(fmt.Sprintf("心跳：%s", time.Now().Format(time.RFC3339)))
+
 		case <-p.stopSignal:
 			p.logInfo("服务停止信号被触发")
 			return
@@ -86,7 +94,7 @@ func (p *serviceProgram) Stop(s service.Service) error {
 }
 
 func (p *serviceProgram) logInfo(message string) {
-	p.safeLog("[INFO] " + message)
+	p.logger.Info().Msg(message)
 	if systemLogger != nil {
 		systemLogger.Info(message)
 	}
@@ -94,40 +102,113 @@ func (p *serviceProgram) logInfo(message string) {
 
 func (p *serviceProgram) logError(message string, err error) {
 	if err != nil {
-		p.safeLog("[ERROR] " + message + ": " + err.Error())
+		p.logger.Error().Err(err).Msg(message)
 		if systemLogger != nil {
 			systemLogger.Error(err)
 		}
 	} else {
-		p.safeLog("[ERROR] " + message)
+		p.logger.Error().Msg(message)
 		if systemLogger != nil {
 			systemLogger.Error(message)
 		}
 	}
 }
 
-func (p *serviceProgram) safeLog(entry string) {
-	if p.fileLogger != nil {
-		p.fileLogger.Println(entry)
-	}
+type dailyLogWriter struct {
+	dir        string
+	retainDays int
+	mu         sync.Mutex
+	writer     *os.File
+	currentDay string
 }
 
-func createLogWriter() (io.WriteCloser, error) {
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("获取工作目录失败: %w", err)
+func newDailyLogWriter(baseDirectory string, retainDays int) (*dailyLogWriter, error) {
+	if retainDays < 1 {
+		retainDays = 1
 	}
 
-	logDirectory := filepath.Join(workingDirectory, "logs")
+	logDirectory := filepath.Join(baseDirectory, "logs")
 	if err := os.MkdirAll(logDirectory, 0o755); err != nil {
 		return nil, fmt.Errorf("创建日志目录失败: %w", err)
 	}
 
-	logFilePath := filepath.Join(logDirectory, "service.log")
-	file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("打开日志文件失败: %w", err)
+	writer := &dailyLogWriter{
+		dir:        logDirectory,
+		retainDays: retainDays,
 	}
 
-	return file, nil
+	if err := writer.rotateIfNeeded(time.Now()); err != nil {
+		return nil, err
+	}
+
+	return writer, nil
+}
+
+func (w *dailyLogWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if err := w.rotateIfNeeded(time.Now()); err != nil {
+		return 0, err
+	}
+
+	return w.writer.Write(p)
+}
+
+func (w *dailyLogWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.writer != nil {
+		return w.writer.Close()
+	}
+
+	return nil
+}
+
+func (w *dailyLogWriter) rotateIfNeeded(currentTime time.Time) error {
+	today := currentTime.Format("2006-01-02")
+	if w.writer != nil && w.currentDay == today {
+		return nil
+	}
+
+	if w.writer != nil {
+		w.writer.Close()
+	}
+
+	fileName := fmt.Sprintf("service-%s.log", today)
+	filePath := filepath.Join(w.dir, fileName)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("打开日志文件失败: %w", err)
+	}
+
+	w.writer = file
+	w.currentDay = today
+	w.cleanupOldFiles(currentTime)
+
+	return nil
+}
+
+func (w *dailyLogWriter) cleanupOldFiles(reference time.Time) {
+	cutoff := reference.AddDate(0, 0, -w.retainDays)
+	entries, err := os.ReadDir(w.dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(w.dir, entry.Name()))
+		}
+	}
 }
