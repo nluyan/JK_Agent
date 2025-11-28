@@ -70,7 +70,7 @@ func main() {
 	workDir, _ := os.Getwd()
 	configFile := filepath.Join(workDir, "appsettings.json")
 	fmt.Printf("尝试加载配置文件: %s\n", configFile)
-	
+
 	settings, err := config.LoadFromFile("")
 	if err != nil {
 		fmt.Printf("配置文件加载失败: %v，使用默认配置\n", err)
