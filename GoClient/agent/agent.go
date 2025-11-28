@@ -211,7 +211,7 @@ func (r *AgentReceiver) RemoteDesk(callID, server, key string) {
 	// 启动远程桌面
 	go func() {
 		var result string
-		
+
 		// 检查平台支持
 		if runtime.GOOS == "linux" {
 			r.agent.logger.Warn().
@@ -219,7 +219,7 @@ func (r *AgentReceiver) RemoteDesk(callID, server, key string) {
 				Str("platform", runtime.GOOS).
 				Msg("Linux平台不支持远程桌面功能")
 			result = "错误：Linux平台不支持远程桌面功能"
-			
+
 			// 发送回调
 			if err := <-r.agent.client.Send("RemoteDeskCallback", callID, result); err != nil {
 				r.agent.logger.Error().
@@ -229,7 +229,7 @@ func (r *AgentReceiver) RemoteDesk(callID, server, key string) {
 			}
 			return
 		}
-		
+
 		// 调用 RustDesk IPC
 		idAndPassword, err := StartRemoteDesk(server, key)
 		if err != nil {
