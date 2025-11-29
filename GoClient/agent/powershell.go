@@ -2,13 +2,16 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -19,8 +22,8 @@ func ExecuteScriptNatively(script string) string {
 		return "无法获取当前目录: " + err.Error()
 	}
 
-	// 使用时间戳生成唯一ID
-	fileID := fmt.Sprintf("%d", os.Getpid())
+	// 使用纳秒时间戳+随机数生成唯一ID
+	fileID := fmt.Sprintf("%d_%d", time.Now().UnixNano(), rand.Int63())
 	scriptFile := fileID + ".ps1"
 	scriptPath := filepath.Join(tempDir, scriptFile)
 
@@ -53,11 +56,18 @@ func ExecuteScriptNatively(script string) string {
 	cmd := getPowerShellCommand()
 	args := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", wrapperPath}
 
+	// 创建30秒超时的上下文
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// 执行命令
-	proc := exec.Command(cmd, args...)
+	proc := exec.CommandContext(ctx, cmd, args...)
 	proc.Dir = tempDir
 	if err := proc.Run(); err != nil {
-		// 忽略执行错误，因为脚本可能正常返回非零退出码
+		if ctx.Err() == context.DeadlineExceeded {
+			return "PowerShell脚本执行超时(30秒)，已终止执行。"
+		}
+		// 忽略其他执行错误，因为脚本可能正常返回非零退出码
 	}
 
 	// 读取输出
