@@ -47,9 +47,21 @@ func main() {
 		return
 	}
 
-	workingDirectory, err := os.Getwd()
+	// 获取可执行文件所在目录（服务模式下os.Getwd()会返回系统目录）
+	exePath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("获取工作目录失败: %v", err)
+		log.Fatalf("获取可执行文件路径失败: %v", err)
+	}
+	// 解析符号链接
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		log.Fatalf("解析可执行文件路径失败: %v", err)
+	}
+	workingDirectory := filepath.Dir(exePath)
+
+	// 设置工作目录为可执行文件所在目录
+	if err := os.Chdir(workingDirectory); err != nil {
+		log.Printf("警告: 无法切换工作目录到 %s: %v", workingDirectory, err)
 	}
 
 	logWriter, err := newDailyLogWriter(workingDirectory, logRetentionDays)
@@ -66,9 +78,9 @@ func main() {
 	// 创建上下文
 	program.ctx, program.cancel = context.WithCancel(context.Background())
 
-	// 加载配置文件
-	workDir, _ := os.Getwd()
-	configFile := filepath.Join(workDir, "appsettings.json")
+	// 加载配置文件（使用可执行文件所在目录）
+	configFile := filepath.Join(workingDirectory, "appsettings.json")
+	fmt.Printf("工作目录: %s\n", workingDirectory)
 	fmt.Printf("尝试加载配置文件: %s\n", configFile)
 
 	settings, err := config.LoadFromFile("")
