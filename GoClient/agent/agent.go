@@ -194,6 +194,11 @@ type AgentReceiver struct {
 
 // CheckUpdate 服务器调用的检查更新方法
 func (r *AgentReceiver) CheckUpdate() {
+	defer func() {
+		if err := recover(); err != nil {
+			r.agent.logger.Error().Msgf("CheckUpdate发生panic: %v", err)
+		}
+	}()
 	r.agent.logger.Info().Msg("收到CheckUpdate请求")
 	if r.agent.onCheckUpdate != nil {
 		r.agent.onCheckUpdate()
@@ -210,6 +215,21 @@ func (r *AgentReceiver) RemoteDesk(callID, server, key string) {
 
 	// 启动远程桌面
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				r.agent.logger.Error().
+					Str("callID", callID).
+					Msgf("RemoteDesk发生panic: %v", err)
+				// 发送错误回调
+				result := fmt.Sprintf("内部错误: %v", err)
+				if sendErr := <-r.agent.client.Send("RemoteDeskCallback", callID, result); sendErr != nil {
+					r.agent.logger.Error().
+						Err(sendErr).
+						Str("callID", callID).
+						Msg("发送RemoteDeskCallback失败")
+				}
+			}
+		}()
 		var result string
 
 		// 检查平台支持
@@ -264,6 +284,21 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 
 	// 执行脚本
 	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				r.agent.logger.Error().
+					Str("callID", callID).
+					Msgf("ExecutePowershellScript发生panic: %v", err)
+				// 发送错误回调
+				outputText := fmt.Sprintf("执行脚本时发生内部错误: %v", err)
+				if sendErr := <-r.agent.client.Send("PowershellScriptCallback", callID, outputText); sendErr != nil {
+					r.agent.logger.Error().
+						Err(sendErr).
+						Str("callID", callID).
+						Msg("发送PowershellScriptCallback失败")
+				}
+			}
+		}()
 		outputText := "执行结果为空。"
 
 		r.agent.logger.Info().Msgf("执行脚本:\n%s", script)
