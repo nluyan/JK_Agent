@@ -91,7 +91,7 @@ func startRustDesk(mode, id, pwd string) {
 	} else if mode == "--file-transfer" {
 		args = []string{mode, id}
 		if pwd != "" {
-			args = append(args, pwd)
+			args = append(args, "--password", pwd)
 		}
 	}
 
