@@ -1,33 +1,33 @@
-# 更新器构建脚本
+# Updater Build Script
 
-Write-Host "开始构建 Updater..." -ForegroundColor Green
+Write-Host "Starting Updater build..." -ForegroundColor Green
 
-# 进入updater目录
+# Navigate to updater directory
 Set-Location -Path "updater"
 
-# 下载依赖
-Write-Host "下载依赖..." -ForegroundColor Yellow
+# Download dependencies
+Write-Host "Downloading dependencies..." -ForegroundColor Yellow
 go mod tidy
 
-# 构建Windows可执行文件
-Write-Host "构建 Updater.exe..." -ForegroundColor Yellow
+# Build Windows executable
+Write-Host "Building Updater.exe..." -ForegroundColor Yellow
 $env:GOOS = "windows"
-$env:GOARCH = "amd64"
+$env:GOARCH = "386"
 go build -ldflags="-s -w" -o "Updater.exe" .
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Updater.exe 构建成功!" -ForegroundColor Green
+    Write-Host "Updater.exe built successfully!" -ForegroundColor Green
     
-    # 移动到父目录
+    # Move to parent directory
     Move-Item -Path "Updater.exe" -Destination ".." -Force
-    Write-Host "Updater.exe 已移动到主目录" -ForegroundColor Green
+    Write-Host "Updater.exe moved to main directory" -ForegroundColor Green
 } else {
-    Write-Host "构建失败!" -ForegroundColor Red
+    Write-Host "Build failed!" -ForegroundColor Red
     Set-Location -Path ".."
     exit 1
 }
 
-# 返回上级目录
+# Return to parent directory
 Set-Location -Path ".."
 
-Write-Host "构建完成!" -ForegroundColor Green
+Write-Host "Build completed!" -ForegroundColor Green

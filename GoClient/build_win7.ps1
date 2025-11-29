@@ -96,17 +96,45 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
 }
 
-# Updater
-Write-Host "`n[3/3] Building Updater for Windows 7..." -ForegroundColor Yellow
-$env:GOARCH = "amd64"
-New-Item -ItemType Directory -Path "output_win7/updater" -Force | Out-Null
+# Updater (32-bit and 64-bit)
+Write-Host "\n[3/5] Building Updater for Windows 7..." -ForegroundColor Yellow
+
+# Update Updater dependencies
 Set-Location -Path "updater"
-& $goCmd build -ldflags="-s -w" -o ../output_win7/updater/Updater.exe .
+Write-Host "  Updating Updater dependencies..." -ForegroundColor Yellow
+& $goCmd mod tidy
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  ✗ Failed to update Updater dependencies" -ForegroundColor Red
+    Set-Location -Path ".."
+    exit 1
+}
+Set-Location -Path ".."
+
+# Updater 64-bit
+Write-Host "\n[4/5] Building Updater 64-bit..." -ForegroundColor Yellow
+$env:GOARCH = "amd64"
+New-Item -ItemType Directory -Path "output_win7/updater_win64" -Force | Out-Null
+Set-Location -Path "updater"
+& $goCmd build -ldflags="-s -w" -o ../output_win7/updater_win64/Updater.exe .
 Set-Location -Path ".."
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Updater build successful" -ForegroundColor Green
+    Write-Host "  ✓ Updater 64-bit build successful" -ForegroundColor Green
 } else {
-    Write-Host "  ✗ Updater build failed" -ForegroundColor Red
+    Write-Host "  ✗ Updater 64-bit build failed" -ForegroundColor Red
+    exit 1
+}
+
+# Updater 32-bit
+Write-Host "\n[5/5] Building Updater 32-bit..." -ForegroundColor Yellow
+$env:GOARCH = "386"
+New-Item -ItemType Directory -Path "output_win7/updater_win32" -Force | Out-Null
+Set-Location -Path "updater"
+& $goCmd build -ldflags="-s -w" -o ../output_win7/updater_win32/Updater.exe .
+Set-Location -Path ".."
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ Updater 32-bit build successful" -ForegroundColor Green
+} else {
+    Write-Host "  ✗ Updater 32-bit build failed" -ForegroundColor Red
     exit 1
 }
 
@@ -117,9 +145,10 @@ Write-Host "  Build Complete!" -ForegroundColor Green
 Write-Host "====================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Output Directory: output_win7/" -ForegroundColor Cyan
-Write-Host "  - output_win7/win64/AgentClient.exe (Windows 7+ 64-bit)" -ForegroundColor White
-Write-Host "  - output_win7/win32/AgentClient.exe (Windows 7+ 32-bit)" -ForegroundColor White
-Write-Host "  - output_win7/updater/Updater.exe   (Windows 7+ Updater)" -ForegroundColor White
+Write-Host "  - output_win7/win64/AgentClient.exe        (Windows 7+ 64-bit)" -ForegroundColor White
+Write-Host "  - output_win7/win32/AgentClient.exe        (Windows 7+ 32-bit)" -ForegroundColor White
+Write-Host "  - output_win7/updater_win64/Updater.exe    (Windows 7+ Updater 64-bit)" -ForegroundColor White
+Write-Host "  - output_win7/updater_win32/Updater.exe    (Windows 7+ Updater 32-bit)" -ForegroundColor White
 Write-Host ""
 
 # Display file sizes
