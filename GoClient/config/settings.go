@@ -17,7 +17,7 @@ type Settings struct {
 
 // Default 默认配置
 var Default = Settings{
-	Version: "1.0.0",
+	Version: "2.11",
 }
 
 // LoadFromFile 从JSON配置文件加载配置
