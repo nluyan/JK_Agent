@@ -1,0 +1,5 @@
+1. 将文件复制到linux服务器上
+2. 执行chmod +x hbbr
+3. 执行nohup ./hbbr
+4. 执行chmod +x hbbs
+5. 执行 nohup ./hbbs

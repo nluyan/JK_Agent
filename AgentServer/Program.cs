@@ -69,22 +69,6 @@ builder.Services
 	   //})
 	   .AddJwtBearer("ApplicationAuthority", options =>
 	   {
-		   //if (!string.IsNullOrWhiteSpace(authority))
-		   //{
-		   // options.Authority = authority;
-		   //}
-		   //options.TokenValidationParameters = new TokenValidationParameters
-		   //{
-		   // NameClaimType = "name",
-		   // ValidateIssuer = true,
-		   // ValidIssuer = issuer,
-		   // ValidateAudience = true,
-		   // ValidAudience = audience,
-		   // ValidateLifetime = true,
-		   // ValidateIssuerSigningKey = true,
-		   // IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)) //如果authority提供了，这个参数可以不要
-		   //};
-		   // 如果你的 IdP 支持 OpenID Connect metadata，优先使用 Authority
 		   options.Authority = authority;
 
 		   options.TokenValidationParameters = new TokenValidationParameters
@@ -177,11 +161,11 @@ app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) 
 });
 
 app.MapGet("/api/agent/list", (AgentService service)
-	=> service.GetAgents());//.RequireAuthorization("ApiPolicy");
+	=> service.GetAgents()).RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
-	=> await service.ExecutePowershellScript(dto, dto.Script));//.RequireAuthorization("ApiPolicy");
+	=> await service.ExecutePowershellScript(dto, dto.Script)).RequireAuthorization("ApiPolicy");
 app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
-	=> await service.RemoteDesk(dto, builder.Configuration["RemoteDesk:Server"], builder.Configuration["RemoteDesk:Key"]));//.RequireAuthorization("ApiPolicy");
+	=> await service.RemoteDesk(dto)).RequireAuthorization("ApiPolicy");
 
 
 app.Run();

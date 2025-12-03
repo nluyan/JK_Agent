@@ -1,7 +1,8 @@
-﻿﻿﻿﻿﻿using System.Collections.Concurrent;
+﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
+﻿﻿﻿﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.SignalR;
 
 namespace AgentServer
 {
@@ -126,13 +127,19 @@ namespace AgentServer
 			}
 		}
 
-		public async Task<string> RemoteDesk(RemoteDeskDTO dto, string server, string key)
+		public async Task<string> RemoteDesk(RemoteDeskDTO dto)
 		{
 			Console.WriteLine($"执行RemoteDesk连接: {JsonSerializer.Serialize(dto)}");
 			var agent = GetAgentByDTO(dto);
 			var requestId = Guid.NewGuid().ToString();
 			var tcs = new TaskCompletionSource<string>();
 			_remoteDeskCallbacks.TryAdd(requestId, tcs);
+
+			var key = config["RemoteDeskKey"];
+			var servers = config.GetSection("RemoteDeskServers").Get<List<RemoteDeskServer>>();
+			var server = servers.FirstOrDefault(c => c.Group.Equals(agent.Group, StringComparison.OrdinalIgnoreCase));
+			if(server == null)
+				server = servers.FirstOrDefault(c => c.Group.Equals("Default", StringComparison.OrdinalIgnoreCase));
 
 			try
 			{
@@ -161,6 +168,11 @@ namespace AgentServer
 			{
 				_remoteDeskCallbacks.TryRemove(requestId, out _);
 			}
+		}
+		public class RemoteDeskServer
+		{
+			public string Group { get; set; } = string.Empty;
+			public string Server { get; set; } = string.Empty;
 		}
 
 		public void HandleCaptureResult(string requestId, byte[] imageData)

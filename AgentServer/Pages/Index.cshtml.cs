@@ -30,10 +30,9 @@ namespace AgentServer.Pages
                 {
                     // 从配置中获取RemoteDesk的server和key参数
                     var configuration = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-                    var server = configuration["RemoteDesk:Server"];
-                    var key = configuration["RemoteDesk:Key"];
+
                     
-                    var result = await _agentService.RemoteDesk(new RemoteDeskDTO { AgentId = agentId }, server, key);
+                    var result = await _agentService.RemoteDesk(new RemoteDeskDTO { AgentId = agentId });
                     return new JsonResult(new { success = true, data = result });
                 }
                 catch (Exception ex)
