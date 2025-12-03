@@ -402,11 +402,22 @@ func createLengthPrefix(length int) []byte {
 
 // StartRemoteDesk 启动远程桌面（主要逻辑）
 func StartRemoteDesk(server, key string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
 	client := NewRustDeskClient()
 	installCounter := false
+	serverConfigured := false
 
 	for {
+		if err := ctx.Err(); err != nil {
+			log.Error().Err(err).Msg("StartRemoteDesk 超时，未能获取 RustDesk ID 和密码")
+			if serverConfigured {
+				return "", errors.New("rustdesk服务器无法连接")
+			}
+			return "", fmt.Errorf("在限定时间内未能获取到 RustDesk ID 和密码: %w", err)
+		}
+
 		var status *ConnectionStatus
 		var err error
 
@@ -464,16 +475,22 @@ func StartRemoteDesk(server, key string) (string, error) {
 			}
 
 			if !strings.Contains(rustServer, server) {
-				// 需要设置服务器
-				log.Debug().Msgf("开始设置服务器 %s %s", server, key)
-				err := client.SetOptions(ctx, map[string]string{
-					"custom-rendezvous-server": server,
-					"key":                      key,
-				})
-				if err != nil {
-					log.Error().Err(err).Msg("设置服务器失败")
+				if !serverConfigured {
+					// 需要设置服务器（仅设置一次）
+					log.Debug().Msgf("开始设置服务器 %s %s", server, key)
+					err := client.SetOptions(ctx, map[string]string{
+						"custom-rendezvous-server": server,
+						"key":                      key,
+					})
+					if err != nil {
+						log.Error().Err(err).Msg("设置服务器失败")
+					} else {
+						serverConfigured = true
+						log.Debug().Msg("服务器设置完成")
+					}
+				} else {
+					log.Debug().Msg("服务器已配置过，等待 RustDesk 应用配置")
 				}
-				log.Debug().Msg("服务器设置完成")
 				time.Sleep(3 * time.Second)
 				continue
 			}
@@ -498,16 +515,34 @@ func StartRemoteDesk(server, key string) (string, error) {
 			return id + "," + pwd, nil
 
 		} else if status.StatusNum <= 0 {
-			// 离线或连接中，设置服务器
-			log.Debug().Msgf("开始设置服务器 %s %s", server, key)
-			err := client.SetOptions(ctx, map[string]string{
-				"custom-rendezvous-server": server,
-				"key":                      key,
-			})
-			if err != nil {
-				log.Error().Err(err).Msg("设置服务器失败")
+			// 离线或连接中，仅在未配置过时设置服务器
+			if !serverConfigured {
+				rustServer, err := client.GetRendezvousServer(ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("获取服务器配置失败")
+					time.Sleep(1 * time.Second)
+					continue
+				}
+
+				if !strings.Contains(rustServer, server) {
+					log.Debug().Msgf("开始设置服务器 %s %s", server, key)
+					err := client.SetOptions(ctx, map[string]string{
+						"custom-rendezvous-server": server,
+						"key":                      key,
+					})
+					if err != nil {
+						log.Error().Err(err).Msg("设置服务器失败")
+					} else {
+						serverConfigured = true
+						log.Debug().Msg("服务器设置完成")
+					}
+				} else {
+					serverConfigured = true
+					log.Debug().Msg("服务器已配置为目标地址，无需重复设置")
+				}
+			} else {
+				log.Debug().Msg("服务器已配置，等待 RustDesk 与服务器建立连接")
 			}
-			log.Debug().Msg("服务器设置完成")
 			time.Sleep(3 * time.Second)
 		} else {
 			log.Debug().Msg("延迟一秒")
