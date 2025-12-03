@@ -4,9 +4,22 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.JSInterop.Infrastructure;
+using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+
+
+if (args.Contains("--install"))
+{
+	Install();
+	return;
+}
+if (args.Contains("--uninstall"))
+{
+	Uninstall();
+	return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,16 +69,16 @@ builder.Services
 	   })
 	   //.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, opt =>
 	   //{
-		  // // 保留JWT配置用于API访问
-		  // var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]);
-		  // opt.TokenValidationParameters = new TokenValidationParameters
-		  // {
-			 //  ValidateIssuer = false,
-			 //  ValidateAudience = false,
-			 //  ValidateLifetime = true,
-			 //  ValidateIssuerSigningKey = true,
-			 //  IssuerSigningKey = new SymmetricSecurityKey(key)
-		  // };
+	   // // 保留JWT配置用于API访问
+	   // var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]);
+	   // opt.TokenValidationParameters = new TokenValidationParameters
+	   // {
+	   //  ValidateIssuer = false,
+	   //  ValidateAudience = false,
+	   //  ValidateLifetime = true,
+	   //  ValidateIssuerSigningKey = true,
+	   //  IssuerSigningKey = new SymmetricSecurityKey(key)
+	   // };
 	   //})
 	   .AddJwtBearer("ApplicationAuthority", options =>
 	   {
@@ -146,11 +159,11 @@ app.MapRazorPages();
 app.MapHub<AgentHub>("/AgentHub");
 
 
-app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) => 
+app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) =>
 {
 	var adminUsername = config["Admin:Username"];
 	var adminPassword = config["Admin:Password"];
-	
+
 	if (dto.Username == adminUsername && dto.Password == adminPassword)
 	{
 		var token = jwt.CreateToken(DateTime.Now + TimeSpan.FromDays(30));
@@ -169,3 +182,49 @@ app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO 
 
 
 app.Run();
+
+
+void Install()
+{
+	if (!File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "AgentServer")))
+	{
+		Console.WriteLine("没有找到AgentServer");
+		Environment.Exit(0);
+	}
+
+	var file = "/etc/systemd/system/agentserver.service";
+	if (!File.Exists(file))
+	{
+		var content = $@"[Unit]
+Description=AgentServer
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={Directory.GetCurrentDirectory()}
+ExecStart={Directory.GetCurrentDirectory()}/AgentServer
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=AgentServer
+
+[Install]
+WantedBy=multi-user.target";
+		File.WriteAllText(file, content);
+
+		Process.Start("systemctl", "enable agentserver.service").WaitForExit();
+		Process.Start("systemctl", "start agentserver.service").WaitForExit();
+
+		Console.WriteLine("AgentServer installed.");
+	}
+}
+
+void Uninstall()
+{
+	Process.Start("systemctl", "stop agentserver.service").WaitForExit();
+	Process.Start("systemctl", "disable agentserver.service").WaitForExit();
+	File.Delete("/etc/systemd/system/agentserver.service");
+	Console.WriteLine("AgentServer uninstalled.");
+}

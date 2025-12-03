@@ -144,7 +144,7 @@ namespace AgentServer
 			try
 			{
 				// 发送脚本执行请求到Agent
-				await _hubContext.Clients.Client(agent.AgentId).SendAsync("RemoteDesk", requestId, server, key);
+				await _hubContext.Clients.Client(agent.AgentId).SendAsync("RemoteDesk", requestId, server.Server, key);
 
 				// 等待客户端回传结果（最多等30秒）
 				var task = await Task.WhenAny(tcs.Task, Task.Delay(30000));
