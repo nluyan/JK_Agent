@@ -301,10 +301,16 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 		}()
 		outputText := "执行结果为空。"
 
-		r.agent.logger.Info().Msgf("执行脚本:\n%s", script)
+		r.agent.logger.Info().
+			Str("callID", callID).
+			Msgf("准备执行PowerShell脚本:\n%s", script)
 
 		// 执行PowerShell脚本
 		outputText = ExecuteScriptNatively(script)
+
+		r.agent.logger.Info().
+			Str("callID", callID).
+			Msgf("PowerShell脚本执行结果:\n%s", outputText)
 
 		// 发送回调
 		if err := <-r.agent.client.Send("PowershellScriptCallback", callID, outputText); err != nil {

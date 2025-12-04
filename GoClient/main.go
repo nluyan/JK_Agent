@@ -39,6 +39,14 @@ type serviceProgram struct {
 }
 
 func main() {
+	if runtime.GOOS == "linux" && hasUninstallFlag(os.Args[1:]) {
+		if err := uninstallSystemdService(); err != nil {
+			log.Fatalf("卸载 systemd 服务失败: %v", err)
+		}
+		fmt.Printf("%s 已卸载。\n", linuxServiceName)
+		return
+	}
+
 	if runtime.GOOS == "linux" && hasInstallFlag(os.Args[1:]) {
 		if err := installSystemdService(); err != nil {
 			log.Fatalf("安装 systemd 服务失败: %v", err)
@@ -229,6 +237,15 @@ func hasInstallFlag(args []string) bool {
 	return false
 }
 
+func hasUninstallFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--uninstall" {
+			return true
+		}
+	}
+	return false
+}
+
 func installSystemdService() error {
 	if runtime.GOOS != "linux" {
 		return fmt.Errorf("install 仅支持 Linux 平台")
@@ -292,6 +309,30 @@ WantedBy=multi-user.target
 		return err
 	}
 
+	return nil
+}
+
+func uninstallSystemdService() error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("uninstall 仅支持 Linux 平台")
+	}
+
+	if err := runCommand("systemctl", "stop", linuxServiceName); err != nil {
+		return err
+	}
+	if err := runCommand("systemctl", "disable", linuxServiceName); err != nil {
+		return err
+	}
+
+	if err := os.Remove(linuxUnitPath); err != nil {
+		return fmt.Errorf("删除 %s 失败: %w", linuxUnitPath, err)
+	}
+
+	if err := runCommand("systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+
+	fmt.Println("JikeAgent uninstalled.")
 	return nil
 }
 
