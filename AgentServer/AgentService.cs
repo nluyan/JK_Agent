@@ -93,6 +93,9 @@ namespace AgentServer
 
 		public async Task<ExecuteResult> ExecutePowershellScript(ExecuteDTO dto, string script)
 		{
+			if(string.IsNullOrWhiteSpace(script))
+				throw new Exception("脚本内容不能为空");
+
 			Console.WriteLine($"执行PowerShell脚本: {JsonSerializer.Serialize(dto)}");
 
 			var agent = GetAgentByDTO(dto);
