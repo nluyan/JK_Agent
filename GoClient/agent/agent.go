@@ -84,9 +84,9 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	// 创建SignalR客户端
 	client, err := signalr.NewClient(ctx,
-		signalr.WithHttpConnection(ctx, a.serverURL),
+		signalr.WithHttpConnection(ctx, a.serverURL, signalr.WithTransports(signalr.TransportWebSockets)),
 		signalr.WithReceiver(receiver),
-		signalr.TransferFormat("Binary"), // 使用MessagePack
+		signalr.TransferFormat(signalr.TransferFormatBinary), // 使用MessagePack，仅在 WebSockets 传输上使用
 	)
 	if err != nil {
 		return fmt.Errorf("创建SignalR客户端失败: %w", err)
@@ -100,24 +100,18 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	defer cancelObserve()
 
 	// 状态监控协程
-	go a.monitorState(stateChan)
+	go a.monitorState(ctx, stateChan)
 
 	// 启动客户端
 	client.Start()
 
-	// 等待连接成功
+	// 等待连接成功（仅用于第一次连接成功的错误检测，注册逻辑在 monitorState 中处理）
 	a.logger.Debug().Msgf("尝试连接到服务器: %s", a.serverURL)
 	if err := <-client.WaitForState(ctx, signalr.ClientConnected); err != nil {
 		return fmt.Errorf("连接失败: %w", err)
 	}
 
 	a.logger.Info().Msg("已连接到服务器...")
-
-	// 注册代理
-	if err := a.registerClient(ctx); err != nil {
-		return fmt.Errorf("注册代理失败: %w", err)
-	}
-
 	a.logger.Info().Msg("Agent服务已启动，持续运行中...")
 
 	// 等待连接断开或取消
@@ -132,13 +126,16 @@ func (a *Agent) runOnce(ctx context.Context) error {
 }
 
 // monitorState 监控连接状态
-func (a *Agent) monitorState(stateChan <-chan signalr.ClientState) {
+func (a *Agent) monitorState(ctx context.Context, stateChan <-chan signalr.ClientState) {
 	for state := range stateChan {
 		switch state {
 		case signalr.ClientConnecting:
 			a.logger.Debug().Msg("正在重新连接...")
 		case signalr.ClientConnected:
-			a.logger.Info().Msg("连接成功")
+			a.logger.Info().Msg("连接成功，开始注册代理...")
+			if err := a.registerClient(ctx); err != nil {
+				a.logger.Error().Err(err).Msg("注册代理失败")
+			}
 		case signalr.ClientClosed:
 			a.logger.Warn().Msg("连接已关闭")
 		}
