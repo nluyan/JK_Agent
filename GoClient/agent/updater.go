@@ -3,6 +3,7 @@ package agent
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"jkagent/goclient/config"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/rs/zerolog"
 )
+
 
 // Updater 自动更新管理器
 type Updater struct {
@@ -141,8 +143,9 @@ func (u *Updater) checkAndUpdate() error {
 		Msg("发现新版本，开始下载更新")
 
 	// 执行更新流程
-	return u.performUpdate()
+	return u.performUpdate(remoteVersion)
 }
+
 
 // fetchRemoteVersion 获取远程版本号
 func (u *Updater) fetchRemoteVersion(url string) (string, error) {
@@ -216,7 +219,7 @@ func parseVersion(version string) [3]int {
 }
 
 // performUpdate 执行更新流程
-func (u *Updater) performUpdate() error {
+func (u *Updater) performUpdate(expectedVersion string) error {
 	baseDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取工作目录失败: %w", err)
@@ -224,15 +227,16 @@ func (u *Updater) performUpdate() error {
 
 	if runtime.GOOS == "windows" {
 		// Windows平台更新流程
-		return u.performWindowsUpdate(baseDir)
+		return u.performWindowsUpdate(baseDir, expectedVersion)
 	}
 
 	// Linux平台更新流程
-	return u.performLinuxUpdate(baseDir)
+	return u.performLinuxUpdate(baseDir, expectedVersion)
 }
 
+
 // performWindowsUpdate Windows平台更新
-func (u *Updater) performWindowsUpdate(baseDir string) error {
+func (u *Updater) performWindowsUpdate(baseDir, expectedVersion string) error {
 	// 下载更新器
 	updaterURL := fmt.Sprintf("%s/update/%s/Updater.exe", u.serverURL, u.group)
 	updaterPath := filepath.Join(baseDir, "Updater.exe")
@@ -260,6 +264,12 @@ func (u *Updater) performWindowsUpdate(baseDir string) error {
 		return fmt.Errorf("解压更新包失败: %w", err)
 	}
 
+	// 校验更新包中的配置和版本
+	if err := u.validatePackageVersion(tempDir, expectedVersion); err != nil {
+		u.logger.Error().Err(err).Msg("更新包验证失败，取消本次更新")
+		return err
+	}
+
 	// 删除更新包
 	u.logger.Info().Msg("删除更新包")
 	if err := os.Remove(packagePath); err != nil {
@@ -283,8 +293,9 @@ func (u *Updater) performWindowsUpdate(baseDir string) error {
 	return nil
 }
 
+
 // performLinuxUpdate Linux平台更新
-func (u *Updater) performLinuxUpdate(baseDir string) error {
+func (u *Updater) performLinuxUpdate(baseDir, expectedVersion string) error {
 	// 下载更新包
 	packageURL := fmt.Sprintf("%s/update/%s/AgentClient.zip", u.serverURL, u.group)
 	packagePath := filepath.Join(baseDir, "AgentClient.zip")
@@ -303,6 +314,12 @@ func (u *Updater) performLinuxUpdate(baseDir string) error {
 	u.logger.Info().Msg("解压更新包")
 	if err := u.unzip(packagePath, tempDir); err != nil {
 		return fmt.Errorf("解压更新包失败: %w", err)
+	}
+
+	// 校验更新包中的配置和版本
+	if err := u.validatePackageVersion(tempDir, expectedVersion); err != nil {
+		u.logger.Error().Err(err).Msg("更新包验证失败，取消本次更新")
+		return err
 	}
 
 	// 删除更新包
@@ -339,6 +356,7 @@ func (u *Updater) performLinuxUpdate(baseDir string) error {
 
 	return nil
 }
+
 
 // downloadFile 下载文件
 func (u *Updater) downloadFile(url, filePath string) error {
@@ -582,3 +600,50 @@ func (u *Updater) copyFile(src, dst string) error {
 
 	return os.Chmod(dst, srcInfo.Mode())
 }
+
+type appSettingsConfig struct {
+	Group       string `json:"Group"`
+	ServerURL   string `json:"ServerUrl"`
+	CheckUpdate int    `json:"CheckUpdate"`
+}
+
+// validatePackageVersion 校验更新包中的配置和目标版本
+func (u *Updater) validatePackageVersion(tempDir, expectedVersion string) error {
+	settingsPath := filepath.Join(tempDir, "appsettings.json")
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return fmt.Errorf("读取更新包配置失败: %w", err)
+	}
+
+	var settings appSettingsConfig
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return fmt.Errorf("解析更新包配置失败: %w", err)
+	}
+
+	settings.ServerURL = strings.TrimRight(strings.TrimSpace(settings.ServerURL), "/")
+	settings.Group = strings.TrimSpace(settings.Group)
+
+	if settings.ServerURL == "" || settings.Group == "" {
+		return fmt.Errorf("更新包配置中的ServerUrl或Group为空")
+	}
+
+	versionURL := fmt.Sprintf("%s/update/%s/version.txt", settings.ServerURL, settings.Group)
+	packageVersion, err := u.fetchRemoteVersion(versionURL)
+	if err != nil {
+		return fmt.Errorf("通过更新包配置检查版本失败: %w", err)
+	}
+
+	if strings.TrimSpace(packageVersion) != strings.TrimSpace(expectedVersion) {
+		return fmt.Errorf("更新包版本(%s)与计划更新版本(%s)不一致", packageVersion, expectedVersion)
+	}
+
+	u.logger.Info().
+		Str("version", packageVersion).
+		Str("configServerUrl", settings.ServerURL).
+		Str("configGroup", settings.Group).
+		Msg("更新包appsettings.json验证通过")
+
+	return nil
+}
+
