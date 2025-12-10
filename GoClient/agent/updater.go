@@ -311,19 +311,27 @@ func (u *Updater) performLinuxUpdate(baseDir string) error {
 		u.logger.Warn().Err(err).Msg("删除更新包失败")
 	}
 
-	// 复制文件
-	u.logger.Info().Msg("复制文件")
+	// 复制除主二进制外的更新文件
+	u.logger.Info().Msg("复制更新文件")
 	if err := u.copyDirectory(tempDir, baseDir); err != nil {
-		return fmt.Errorf("复制文件失败: %w", err)
+		return fmt.Errorf("复制更新文件失败: %w", err)
+	}
+
+	// 使用 mv 语义替换主二进制 AgentClient
+	tempExecPath := filepath.Join(tempDir, "AgentClient")
+	execPath := filepath.Join(baseDir, "AgentClient")
+	u.logger.Info().Msg("使用 mv 语义替换主二进制")
+	if err := u.moveFile(tempExecPath, execPath); err != nil {
+		return fmt.Errorf("替换主二进制失败: %w", err)
 	}
 
 	// 设置可执行权限
-	execPath := filepath.Join(baseDir, "AgentClient")
 	u.logger.Info().Msg("设置可执行权限")
 	cmd := exec.Command("chmod", "+x", execPath)
 	if err := cmd.Run(); err != nil {
 		u.logger.Warn().Err(err).Msg("设置可执行权限失败")
 	}
+
 
 	// 退出应用（systemd会自动重启）
 	u.logger.Info().Msg("更新完成，程序将退出")
@@ -463,6 +471,10 @@ func (u *Updater) copyDirectory(src, dst string) error {
 				u.logger.Warn().Err(err).Str("dir", srcPath).Msg("复制目录失败")
 			}
 		} else {
+			if entry.Name() == "AgentClient" {
+				// 主二进制由后续 mv 逻辑处理，这里跳过复制
+				continue
+			}
 			// 复制文件
 			if err := u.copyFile(srcPath, dstPath); err != nil {
 				u.logger.Warn().Err(err).Str("file", srcPath).Msg("复制文件失败")
@@ -473,8 +485,79 @@ func (u *Updater) copyDirectory(src, dst string) error {
 	return nil
 }
 
+
+// moveDirectory 使用重命名方式移动目录内容，语义类似 mv
+func (u *Updater) moveDirectory(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("源路径不是目录: %s", src)
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := os.RemoveAll(dstPath); err != nil && !os.IsNotExist(err) {
+				u.logger.Warn().Err(err).Str("dir", dstPath).Msg("删除旧目录失败")
+			}
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				u.logger.Warn().Err(err).Str("dir", srcPath).Msg("重命名目录失败，尝试递归移动")
+				if err := u.moveDirectory(srcPath, dstPath); err != nil {
+					return err
+				}
+			}
+		} else {
+			if err := u.moveFile(srcPath, dstPath); err != nil {
+				u.logger.Warn().Err(err).Str("file", srcPath).Msg("移动文件失败")
+			}
+		}
+	}
+
+	return nil
+}
+
+// moveFile 使用重命名方式移动单个文件，必要时回退到复制
+func (u *Updater) moveFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	if err := u.copyFile(src, dst); err != nil {
+		return err
+	}
+
+	if err := os.Remove(src); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // copyFile 复制单个文件
 func (u *Updater) copyFile(src, dst string) error {
+
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
