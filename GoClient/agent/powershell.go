@@ -238,8 +238,8 @@ func getPowerShellCommand() string {
 		if _, err := os.Stat("./pwsh/pwsh"); err == nil {
 			return "./pwsh/pwsh"
 		}
-		// 回退到系统pwsh
-		return "pwsh"
+		// 回退到系统bash
+		return "bash"
 	}
 
 	// Windows系统
