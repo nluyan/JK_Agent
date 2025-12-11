@@ -26,6 +26,7 @@ type Updater struct {
 	serverURL         string
 	group             string
 	logger            zerolog.Logger
+	enableDebug       bool
 	checkInterval     time.Duration
 	isCheckingUpdate  bool
 	updateMutex       sync.Mutex
@@ -34,8 +35,9 @@ type Updater struct {
 	onCheckUpdateFunc func()
 }
 
+
 // NewUpdater 创建新的Updater实例
-func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zerolog.Logger) *Updater {
+func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zerolog.Logger, enableDebug bool) *Updater {
 	if checkInterval < time.Minute {
 		checkInterval = 10 * time.Minute // 默认10分钟
 	}
@@ -44,10 +46,12 @@ func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zer
 		serverURL:     serverURL,
 		group:         group,
 		logger:        logger,
+		enableDebug:   enableDebug,
 		checkInterval: checkInterval,
 		stopChan:      make(chan struct{}),
 	}
 }
+
 
 // SetOnCheckUpdate 设置手动检查更新回调
 func (u *Updater) SetOnCheckUpdate(handler func()) {
@@ -57,9 +61,12 @@ func (u *Updater) SetOnCheckUpdate(handler func()) {
 // Start 启动定期更新检查
 func (u *Updater) Start(ctx context.Context) {
 	u.ctx = ctx
-	u.logger.Debug().
-		Float64("intervalMinutes", u.checkInterval.Minutes()).
-		Msg("启动定期更新检查")
+	if u.enableDebug {
+		u.logger.Debug().
+			Float64("intervalMinutes", u.checkInterval.Minutes()).
+			Msg("启动定期更新检查")
+	}
+
 
 	// 启动定期检查协程
 	go u.periodicCheck()
@@ -72,7 +79,10 @@ func (u *Updater) Stop() {
 
 // CheckNow 手动触发更新检查
 func (u *Updater) CheckNow() {
-	u.logger.Debug().Msg("收到手动更新检查请求")
+	if u.enableDebug {
+		u.logger.Debug().Msg("收到手动更新检查请求")
+	}
+
 	if err := u.checkAndUpdate(); err != nil {
 		u.logger.Error().Err(err).Msg("手动更新检查失败")
 	}
@@ -87,14 +97,21 @@ func (u *Updater) periodicCheck() {
 		select {
 		case <-ticker.C:
 			if err := u.checkAndUpdate(); err != nil {
-				u.logger.Debug().Err(err).Msg("定期更新检查失败")
+				if u.enableDebug {
+					u.logger.Debug().Err(err).Msg("定期更新检查失败")
+				}
 			}
 		case <-u.stopChan:
-			u.logger.Debug().Msg("定期更新检查已停止")
+			if u.enableDebug {
+				u.logger.Debug().Msg("定期更新检查已停止")
+			}
 			return
 		case <-u.ctx.Done():
-			u.logger.Debug().Msg("定期更新检查上下文取消")
+			if u.enableDebug {
+				u.logger.Debug().Msg("定期更新检查上下文取消")
+			}
 			return
+
 		}
 	}
 }
@@ -115,12 +132,22 @@ func (u *Updater) checkAndUpdate() error {
 		u.updateMutex.Unlock()
 	}()
 
+	if u.enableDebug {
+		u.logger.Debug().
+			Str("currentVersion", config.Default.Version).
+			Msg("开始执行定期版本检查")
+	}
+
 	if u.serverURL == "" {
-		u.logger.Debug().Msg("ServerURL为空，跳过更新检查")
+		if u.enableDebug {
+			u.logger.Debug().Msg("ServerURL为空，跳过更新检查")
+		}
+
 		return nil
 	}
 
 	// 获取远程版本号
+
 	remoteVersionURL := fmt.Sprintf("%s/update/%s/version.txt", u.serverURL, u.group)
 	remoteVersion, err := u.fetchRemoteVersion(remoteVersionURL)
 	if err != nil {
@@ -128,16 +155,26 @@ func (u *Updater) checkAndUpdate() error {
 	}
 
 	if remoteVersion == "" {
-		u.logger.Debug().Msg("远程版本信息为空，跳过更新")
+		if u.enableDebug {
+			u.logger.Debug().Msg("远程版本信息为空，跳过更新")
+		}
 		return nil
 	}
 
 	// 比较版本
 	if !u.isNewVersion(remoteVersion, config.Default.Version) {
+		if u.enableDebug {
+			u.logger.Debug().
+				Str("remoteVersion", remoteVersion).
+				Str("currentVersion", config.Default.Version).
+				Msg("定期检查完成，当前已是最新版本")
+		}
 		return nil
 	}
 
+
 	u.logger.Info().
+
 		Str("remoteVersion", remoteVersion).
 		Str("currentVersion", config.Default.Version).
 		Msg("发现新版本，开始下载更新")

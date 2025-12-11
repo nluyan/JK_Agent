@@ -13,12 +13,16 @@ type Settings struct {
 	ServerURL   string `json:"ServerUrl"`
 	Group       string `json:"Group"`
 	CheckUpdate int    `json:"CheckUpdate"` // 更新检查间隔（秒），0表示使用默认值10分钟
+	Debug       bool   `json:"Debug"`
 }
+
 
 // Default 默认配置
 var Default = Settings{
-	Version: "2.13",
+	Version: "2.16",
+	Debug:   false,
 }
+
 
 // LoadFromFile 从JSON配置文件加载配置
 func LoadFromFile(configPath string) (*Settings, error) {

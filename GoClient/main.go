@@ -132,7 +132,8 @@ func main() {
 	if checkInterval == 0 {
 		checkInterval = 10 * time.Minute // 默认10分钟
 	}
-	program.updater = agent.NewUpdater(settings.ServerURL, settings.Group, checkInterval, program.logger)
+	program.updater = agent.NewUpdater(settings.ServerURL, settings.Group, checkInterval, program.logger, settings.Debug)
+
 
 	// 设置CheckUpdate事件处理器（手动触发更新检查）
 	program.agent.SetOnCheckUpdate(func() {
