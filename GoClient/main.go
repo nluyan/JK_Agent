@@ -39,6 +39,12 @@ type serviceProgram struct {
 }
 
 func main() {
+	// 版本输出模式：如果带 -v / --version，则只打印版本后退出
+	if hasVersionFlag(os.Args[1:]) {
+		fmt.Printf("当前版本: %s\n", config.Default.Version)
+		return
+	}
+
 	if runtime.GOOS == "linux" && hasUninstallFlag(os.Args[1:]) {
 		if err := uninstallSystemdService(); err != nil {
 			log.Fatalf("卸载 systemd 服务失败: %v", err)
@@ -54,6 +60,7 @@ func main() {
 		fmt.Printf("%s 已安装。\n", linuxServiceName)
 		return
 	}
+
 
 	// 获取可执行文件所在目录（服务模式下os.Getwd()会返回系统目录）
 	exePath, err := os.Executable()
@@ -123,9 +130,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 显示当前Debug模式
+	mode := "Release"
+	if settings.Debug {
+		mode = "Debug"
+	}
+	fmt.Printf("当前运行模式: %s (Debug=%v)\n", mode, settings.Debug)
+	program.logger.Info().
+		Str("mode", mode).
+		Bool("debug", settings.Debug).
+		Msg("应用启动模式")
+
 	// 创建Agent
 
 	program.agent = agent.NewAgent(settings.ServerURL+"/AgentHub", settings.Group, program.logger)
+
 
 	// 创建Updater
 	checkInterval := time.Duration(settings.CheckUpdate) * time.Second
@@ -229,6 +248,15 @@ func (p *serviceProgram) logError(message string, err error) {
 	}
 }
 
+func hasVersionFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "-v" || arg == "--version" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasInstallFlag(args []string) bool {
 	for _, arg := range args {
 		if arg == "--install" {
@@ -237,6 +265,7 @@ func hasInstallFlag(args []string) bool {
 	}
 	return false
 }
+
 
 func hasUninstallFlag(args []string) bool {
 	for _, arg := range args {

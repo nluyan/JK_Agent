@@ -61,16 +61,18 @@ func (u *Updater) SetOnCheckUpdate(handler func()) {
 // Start 启动定期更新检查
 func (u *Updater) Start(ctx context.Context) {
 	u.ctx = ctx
+
+	fmt.Printf("[AutoUpdate] 启动定期更新检查，间隔 %.1f 分钟\n", u.checkInterval.Minutes())
 	if u.enableDebug {
 		u.logger.Debug().
 			Float64("intervalMinutes", u.checkInterval.Minutes()).
 			Msg("启动定期更新检查")
 	}
 
-
 	// 启动定期检查协程
 	go u.periodicCheck()
 }
+
 
 // Stop 停止定期更新检查
 func (u *Updater) Stop() {
@@ -96,17 +98,21 @@ func (u *Updater) periodicCheck() {
 	for {
 		select {
 		case <-ticker.C:
+			fmt.Println("[AutoUpdate] 开始执行一次定期更新检查")
 			if err := u.checkAndUpdate(); err != nil {
+				fmt.Printf("[AutoUpdate] 定期更新检查失败: %v\n", err)
 				if u.enableDebug {
 					u.logger.Debug().Err(err).Msg("定期更新检查失败")
 				}
 			}
 		case <-u.stopChan:
+			fmt.Println("[AutoUpdate] 定期更新检查已停止")
 			if u.enableDebug {
 				u.logger.Debug().Msg("定期更新检查已停止")
 			}
 			return
 		case <-u.ctx.Done():
+			fmt.Println("[AutoUpdate] 定期更新检查上下文取消")
 			if u.enableDebug {
 				u.logger.Debug().Msg("定期更新检查上下文取消")
 			}
@@ -115,6 +121,8 @@ func (u *Updater) periodicCheck() {
 		}
 	}
 }
+
+
 
 // checkAndUpdate 检查并执行更新
 func (u *Updater) checkAndUpdate() error {
@@ -132,6 +140,7 @@ func (u *Updater) checkAndUpdate() error {
 		u.updateMutex.Unlock()
 	}()
 
+	fmt.Printf("[AutoUpdate] 开始执行定期版本检查，当前版本: %s\n", config.Default.Version)
 	if u.enableDebug {
 		u.logger.Debug().
 			Str("currentVersion", config.Default.Version).
@@ -139,6 +148,7 @@ func (u *Updater) checkAndUpdate() error {
 	}
 
 	if u.serverURL == "" {
+		fmt.Println("[AutoUpdate] ServerURL 为空，跳过更新检查")
 		if u.enableDebug {
 			u.logger.Debug().Msg("ServerURL为空，跳过更新检查")
 		}
@@ -155,6 +165,7 @@ func (u *Updater) checkAndUpdate() error {
 	}
 
 	if remoteVersion == "" {
+		fmt.Println("[AutoUpdate] 远程版本信息为空，跳过更新")
 		if u.enableDebug {
 			u.logger.Debug().Msg("远程版本信息为空，跳过更新")
 		}
@@ -163,6 +174,7 @@ func (u *Updater) checkAndUpdate() error {
 
 	// 比较版本
 	if !u.isNewVersion(remoteVersion, config.Default.Version) {
+		fmt.Printf("[AutoUpdate] 当前已是最新版本，远程版本: %s, 当前版本: %s\n", remoteVersion, config.Default.Version)
 		if u.enableDebug {
 			u.logger.Debug().
 				Str("remoteVersion", remoteVersion).
@@ -172,16 +184,19 @@ func (u *Updater) checkAndUpdate() error {
 		return nil
 	}
 
-
-	u.logger.Info().
-
-		Str("remoteVersion", remoteVersion).
-		Str("currentVersion", config.Default.Version).
-		Msg("发现新版本，开始下载更新")
+	fmt.Printf("[AutoUpdate] 发现新版本，开始下载更新。远程版本: %s, 当前版本: %s\n", remoteVersion, config.Default.Version)
+	if u.enableDebug {
+		u.logger.Info().
+			Str("remoteVersion", remoteVersion).
+			Str("currentVersion", config.Default.Version).
+			Msg("发现新版本，开始下载更新")
+	}
 
 	// 执行更新流程
 	return u.performUpdate(remoteVersion)
 }
+
+
 
 
 // fetchRemoteVersion 获取远程版本号
@@ -231,6 +246,12 @@ func (u *Updater) isNewVersion(remoteVersion, currentVersion string) bool {
 func parseVersion(version string) [3]int {
 	var parts [3]int
 
+	// 去掉首尾空白以及 UTF-8 BOM 等前导不可见字符
+	version = strings.TrimSpace(version)
+	version = strings.TrimLeftFunc(version, func(r rune) bool {
+		return r < '0' || r > '9'
+	})
+
 	// 移除前缀 'v' 或 'V'
 	version = strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V")
 
@@ -238,13 +259,24 @@ func parseVersion(version string) [3]int {
 	segments := strings.Split(version, ".")
 
 	for i := 0; i < 3 && i < len(segments); i++ {
-		// 解析数字部分（忽略非数字后缀，如 "1.0.0-beta"）
+		// 解析数字部分（忽略非数字前后缀，如 "\ufeff2"、"1.0.0-beta"）
 		numStr := segments[i]
+
+		// 去掉前导非数字
+		numStr = strings.TrimLeftFunc(numStr, func(r rune) bool {
+			return r < '0' || r > '9'
+		})
+
+		// 截断第一个非数字之后
 		for j, ch := range numStr {
 			if ch < '0' || ch > '9' {
 				numStr = numStr[:j]
 				break
 			}
+		}
+
+		if numStr == "" {
+			continue
 		}
 
 		if num, err := strconv.Atoi(numStr); err == nil {
@@ -254,6 +286,7 @@ func parseVersion(version string) [3]int {
 
 	return parts
 }
+
 
 // performUpdate 执行更新流程
 func (u *Updater) performUpdate(expectedVersion string) error {

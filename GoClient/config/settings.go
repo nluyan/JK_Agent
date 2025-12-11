@@ -16,13 +16,11 @@ type Settings struct {
 	Debug       bool   `json:"Debug"`
 }
 
-
 // Default 默认配置
 var Default = Settings{
 	Version: "2.16",
 	Debug:   false,
 }
-
 
 // LoadFromFile 从JSON配置文件加载配置
 func LoadFromFile(configPath string) (*Settings, error) {
