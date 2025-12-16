@@ -20,7 +20,8 @@ type EventHandler func()
 
 // Agent SignalR代理客户端
 type Agent struct {
-	serverURL         string
+	serverURLs        []string // 服务器URL列表（分号分隔解析）
+	currentURLIndex   int      // 当前使用的URL索引
 	group             string
 	logger            zerolog.Logger
 	client            signalr.Client
@@ -31,13 +32,55 @@ type Agent struct {
 
 // NewAgent 创建新的Agent实例
 func NewAgent(serverURL, group string, logger zerolog.Logger) *Agent {
+	// 解析分号分隔的服务器URL列表
+	var serverURLs []string
+	if strings.Contains(serverURL, ";") {
+		for _, url := range strings.Split(serverURL, ";") {
+			url = strings.TrimSpace(url)
+			if url != "" {
+				serverURLs = append(serverURLs, url)
+			}
+		}
+		logger.Info().Strs("urls", serverURLs).Msg("解析到多个服务器URL")
+	} else {
+		// 单个URL情况
+		serverURLs = []string{serverURL}
+		logger.Info().Str("url", serverURL).Msg("使用单个服务器URL")
+	}
+
 	return &Agent{
-		serverURL:         serverURL,
+		serverURLs:        serverURLs,
+		currentURLIndex:   0,
 		group:             group,
 		logger:            logger,
 		stopChan:          make(chan struct{}),
 		onRemoteDeskReady: make(chan struct{}, 1),
 	}
+}
+
+// getCurrentServerURL 获取当前使用的完整服务器URL（包含/AgentHub后缀）
+func (a *Agent) getCurrentServerURL() string {
+	url := a.serverURLs[a.currentURLIndex]
+	if !strings.HasSuffix(url, "/AgentHub") {
+		url += "/AgentHub"
+	}
+	return url
+}
+
+// getCurrentBaseURL 获取当前使用的基础URL（不包含/AgentHub后缀，用于版本检查）
+func (a *Agent) getCurrentBaseURL() string {
+	baseURL := a.serverURLs[a.currentURLIndex]
+	if strings.HasSuffix(baseURL, "/AgentHub") {
+		baseURL = strings.TrimSuffix(baseURL, "/AgentHub")
+	}
+	return baseURL
+}
+
+// getNextServerURL 获取下一个要尝试的服务器URL
+func (a *Agent) getNextServerURL() {
+	// 循环到下一个URL索引
+	a.currentURLIndex = (a.currentURLIndex + 1) % len(a.serverURLs)
+	a.logger.Info().Str("nextUrl", a.getCurrentServerURL()).Msg("切换到下一个服务器URL")
 }
 
 // SetOnCheckUpdate 设置CheckUpdate事件处理器
@@ -82,13 +125,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	// 检查服务器是否可连接
 	a.logger.Debug().Msg("检查服务器是否可连接...")
-	// 移除serverURL中的/AgentHub后缀用于版本检查
-	serverBaseURL := a.serverURL
-	if strings.HasSuffix(serverBaseURL, "/AgentHub") {
-		serverBaseURL = strings.TrimSuffix(serverBaseURL, "/AgentHub")
-	}
-	versionURL := fmt.Sprintf("%s/update/%s/version.txt", serverBaseURL, a.group)
+	// 使用当前URL进行版本检查
+	versionURL := fmt.Sprintf("%s/update/%s/version.txt", a.getCurrentBaseURL(), a.group)
 	if _, err := a.fetchRemoteVersion(versionURL); err != nil {
+		// 服务器连接失败，切换到下一个URL
+		a.getNextServerURL()
 		return fmt.Errorf("服务器不可连接: %w", err)
 	}
 	a.logger.Debug().Msg("服务器连接检查成功")
@@ -100,11 +141,13 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	// 创建SignalR客户端
 	client, err := signalr.NewClient(ctx,
-		signalr.WithHttpConnection(ctx, a.serverURL, signalr.WithTransports(signalr.TransportWebSockets)),
+		signalr.WithHttpConnection(ctx, a.getCurrentServerURL(), signalr.WithTransports(signalr.TransportWebSockets)),
 		signalr.WithReceiver(receiver),
 		signalr.TransferFormat(signalr.TransferFormatBinary), // 使用MessagePack，仅在 WebSockets 传输上使用
 	)
 	if err != nil {
+		// 创建客户端失败，切换到下一个URL
+		a.getNextServerURL()
 		return fmt.Errorf("创建SignalR客户端失败: %w", err)
 	}
 
@@ -122,8 +165,10 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	client.Start()
 
 	// 等待连接成功（仅用于第一次连接成功的错误检测，注册逻辑在 monitorState 中处理）
-	a.logger.Debug().Msgf("尝试连接到服务器: %s", a.serverURL)
+	a.logger.Debug().Msgf("尝试连接到服务器: %s", a.getCurrentServerURL())
 	if err := <-client.WaitForState(ctx, signalr.ClientConnected); err != nil {
+		// 连接失败，切换到下一个URL
+		a.getNextServerURL()
 		return fmt.Errorf("连接失败: %w", err)
 	}
 

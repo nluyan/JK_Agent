@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"jkagent/goclient/agent"
 	"jkagent/goclient/config"
 	"log"
@@ -36,6 +37,25 @@ type serviceProgram struct {
 	updater    *agent.Updater
 	ctx        context.Context
 	cancel     context.CancelFunc
+}
+
+// customLevelWriter 自定义日志级别写入器，用于控制不同级别日志的输出
+type customLevelWriter struct {
+	fileWriter io.Writer
+}
+
+// WriteLevel 实现 zerolog.LevelWriter 接口
+func (w *customLevelWriter) WriteLevel(level zerolog.Level, p []byte) (n int, err error) {
+	if level <= zerolog.DebugLevel { // debug级别只输出到控制台，不写入文件
+		return len(p), nil
+	}
+	return w.fileWriter.Write(p) // 非debug级别输出到文件
+}
+
+// Write 实现 io.Writer 接口（兼容性）
+func (w *customLevelWriter) Write(p []byte) (n int, err error) {
+	// 当没有级别信息时，默认不写入文件（避免debug日志通过Write方法写入）
+	return len(p), nil
 }
 
 func main() {
@@ -85,11 +105,18 @@ func main() {
 	}
 	defer logWriter.Close()
 
-	// 同时输出日志到文件和控制台
-	multiWriter := zerolog.MultiLevelWriter(logWriter, os.Stdout)
+	// 创建自定义LevelWriter，debug级别只输出到控制台，其他级别同时输出到文件和控制台
+	customWriter := zerolog.MultiLevelWriter(
+		&customLevelWriter{
+			fileWriter: logWriter,
+		},
+		os.Stdout, // 所有级别都输出到控制台
+	)
+
+	
 
 	program := &serviceProgram{
-		logger:     zerolog.New(multiWriter).With().Timestamp().Logger(),
+		logger:     zerolog.New(customWriter).With().Timestamp().Logger(),
 		stopSignal: make(chan struct{}),
 	}
 
@@ -146,7 +173,7 @@ func main() {
 
 	// 创建Agent
 
-	program.agent = agent.NewAgent(settings.ServerURL+"/AgentHub", settings.Group, program.logger)
+	program.agent = agent.NewAgent(settings.ServerURL, settings.Group, program.logger)
 
 
 	// 创建Updater
