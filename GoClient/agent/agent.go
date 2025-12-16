@@ -114,6 +114,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	a.logger.Info().Msg("已连接到服务器...")
 	a.logger.Info().Msg("Agent服务已启动，持续运行中...")
 
+	// 启动定时更新goroutine
+	updateCtx, updateCancel := context.WithCancel(ctx)
+	go a.startPeriodicUpdate(updateCtx)
+	defer updateCancel()
+
 	// 等待连接断开或取消
 	select {
 	case <-ctx.Done():
@@ -144,6 +149,16 @@ func (a *Agent) monitorState(ctx context.Context, stateChan <-chan signalr.Clien
 
 // registerClient 注册代理到服务器
 func (a *Agent) registerClient(ctx context.Context) error {
+	return a.updateAgentInternal(ctx, "RegisterAgent")
+}
+
+// updateAgent 更新代理信息到服务器
+func (a *Agent) updateAgent(ctx context.Context) error {
+	return a.updateAgentInternal(ctx, "UpdateAgent")
+}
+
+// updateAgentInternal 内部方法，用于注册或更新代理信息
+func (a *Agent) updateAgentInternal(ctx context.Context, method string) error {
 	platform := GetPlatform()
 	osArch := GetOSArch()
 	osDesc := GetOSDesc()
@@ -151,19 +166,21 @@ func (a *Agent) registerClient(ctx context.Context) error {
 	allIP := GetAllIP()
 	hostName := GetHostName()
 
-	a.logger.Info().
-		Str("mac", macAddress).
-		Str("version", config.Default.Version).
-		Str("ips", allIP).
-		Str("group", a.group).
-		Int("platform", platform).
-		Str("arch", osArch).
-		Str("os", osDesc).
-		Str("hostname", hostName).
-		Msg("注册代理信息")
+	if method == "RegisterAgent" {
+		a.logger.Info().
+			Str("mac", macAddress).
+			Str("version", config.Default.Version).
+			Str("ips", allIP).
+			Str("group", a.group).
+			Int("platform", platform).
+			Str("arch", osArch).
+			Str("os", osDesc).
+			Str("hostname", hostName).
+			Msg("注册代理信息")
+	}
 
-	// 调用服务器的RegisterAgent方法
-	result := <-a.client.Invoke("RegisterAgent",
+	// 调用服务器方法
+	result := <-a.client.Invoke(method,
 		macAddress,
 		config.Default.Version,
 		allIP,
@@ -178,13 +195,41 @@ func (a *Agent) registerClient(ctx context.Context) error {
 		return result.Error
 	}
 
-	a.logger.Info().Msg("代理注册成功")
+	if method == "RegisterAgent" {
+		a.logger.Info().Msg("代理注册成功")
+	} else {
+		a.logger.Debug().Msg("代理信息更新成功")
+	}
 	return nil
 }
 
 // Stop 停止Agent服务
 func (a *Agent) Stop() {
 	close(a.stopChan)
+}
+
+// startPeriodicUpdate 启动定期更新代理信息的任务
+func (a *Agent) startPeriodicUpdate(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	a.logger.Info().Msg("定期更新任务已启动，每1分钟更新一次代理信息")
+
+	for {
+		select {
+		case <-ctx.Done():
+			a.logger.Info().Msg("定期更新任务停止（上下文取消）")
+			return
+		case <-a.stopChan:
+			a.logger.Info().Msg("定期更新任务停止（服务停止）")
+			return
+		case <-ticker.C:
+			// 调用UpdateAgent接口更新代理信息
+			if err := a.updateAgent(ctx); err != nil {
+				a.logger.Error().Err(err).Msg("更新代理信息失败")
+			}
+		}
+	}
 }
 
 // AgentReceiver 接收服务器端调用

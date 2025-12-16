@@ -286,46 +286,6 @@
             overflow: visible;
         }
 
-            .tooltip .tooltiptext {
-                visibility: hidden;
-                width: 320px;
-                background-color: #2d3748;
-                color: #fff;
-                text-align: left;
-                border-radius: 6px;
-                padding: 10px 12px;
-                position: absolute;
-                z-index: 10000;
-                bottom: 100%;
-                left: 50%;
-                margin-left: -160px;
-                margin-bottom: 8px;
-                opacity: 0;
-                transition: opacity 0.3s ease;
-                font-family: 'Monaco', 'Courier New', monospace;
-                font-size: 12px;
-                word-break: break-word;
-                white-space: normal;
-                box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-                pointer-events: none;
-            }
-
-                .tooltip .tooltiptext::after {
-                    content: "";
-                    position: absolute;
-                    bottom: -8px;
-                    left: 50%;
-                    margin-left: -5px;
-                    border-width: 5px;
-                    border-style: solid;
-                    border-color: #2d3748 transparent transparent transparent;
-                }
-
-            .tooltip:hover .tooltiptext {
-                visibility: visible;
-                opacity: 1;
-            }
-
         .action-buttons {
             display: flex;
             gap: 8px;
@@ -465,11 +425,12 @@
                                 <th>[机构]</th>
                                 <th>[Agent ID]</th>
                                 <th>[版本]</th>
+                                <th>[主机名]</th>
                                 <th>[IP 地址]</th>
                                 <th>[序列号]</th>
                                 <th>[平台]</th>
                                 <th>[系统描述]</th>
-                                <th>[架构]</th>
+                                
                                 <th>[操作]</th>
                             </tr>
                         </thead>
@@ -480,49 +441,41 @@
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.Group</span>
-                                            <span class="tooltiptext">@agent.Group</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.AgentId</span>
-                                            <span class="tooltiptext">@agent.AgentId</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.Version</span>
-                                            <span class="tooltiptext">@agent.Version</span>
+                                        </div>
+                                    </td>
+                                    <td class="field-value">
+                                        <div class="tooltip">
+                                            <span class="cell-content">@agent.HostName</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.IpAddress</span>
-                                            <span class="tooltiptext">@agent.IpAddress</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.BoardSerial</span>
-                                            <span class="tooltiptext">@agent.BoardSerial</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
-                                            <span class="tooltiptext">@(agent.OSPlatform == 1 ? "Windows" : agent.OSPlatform == 2 ? "Linux" : agent.OSPlatform == 3 ? "macOS" : "Unknown")</span>
                                         </div>
                                     </td>
                                     <td class="field-value">
                                         <div class="tooltip">
                                             <span class="cell-content">@agent.OSDescription</span>
-                                            <span class="tooltiptext">@agent.OSDescription</span>
-                                        </div>
-                                    </td>
-                                    <td class="field-value">
-                                        <div class="tooltip">
-                                            <span class="cell-content">@agent.OSArchitecture</span>
-                                            <span class="tooltiptext">@agent.OSArchitecture</span>
                                         </div>
                                     </td>
                                     <td>

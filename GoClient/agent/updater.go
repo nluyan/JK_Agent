@@ -20,7 +20,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-
 // Updater 自动更新管理器
 type Updater struct {
 	serverURL         string
@@ -34,7 +33,6 @@ type Updater struct {
 	ctx               context.Context
 	onCheckUpdateFunc func()
 }
-
 
 // NewUpdater 创建新的Updater实例
 func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zerolog.Logger, enableDebug bool) *Updater {
@@ -51,7 +49,6 @@ func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zer
 		stopChan:      make(chan struct{}),
 	}
 }
-
 
 // SetOnCheckUpdate 设置手动检查更新回调
 func (u *Updater) SetOnCheckUpdate(handler func()) {
@@ -72,7 +69,6 @@ func (u *Updater) Start(ctx context.Context) {
 	// 启动定期检查协程
 	go u.periodicCheck()
 }
-
 
 // Stop 停止定期更新检查
 func (u *Updater) Stop() {
@@ -121,8 +117,6 @@ func (u *Updater) periodicCheck() {
 		}
 	}
 }
-
-
 
 // checkAndUpdate 检查并执行更新
 func (u *Updater) checkAndUpdate() error {
@@ -195,9 +189,6 @@ func (u *Updater) checkAndUpdate() error {
 	// 执行更新流程
 	return u.performUpdate(remoteVersion)
 }
-
-
-
 
 // fetchRemoteVersion 获取远程版本号
 func (u *Updater) fetchRemoteVersion(url string) (string, error) {
@@ -287,7 +278,6 @@ func parseVersion(version string) [3]int {
 	return parts
 }
 
-
 // performUpdate 执行更新流程
 func (u *Updater) performUpdate(expectedVersion string) error {
 	baseDir, err := os.Getwd()
@@ -303,7 +293,6 @@ func (u *Updater) performUpdate(expectedVersion string) error {
 	// Linux平台更新流程
 	return u.performLinuxUpdate(baseDir, expectedVersion)
 }
-
 
 // performWindowsUpdate Windows平台更新
 func (u *Updater) performWindowsUpdate(baseDir, expectedVersion string) error {
@@ -363,7 +352,6 @@ func (u *Updater) performWindowsUpdate(baseDir, expectedVersion string) error {
 	return nil
 }
 
-
 // performLinuxUpdate Linux平台更新
 func (u *Updater) performLinuxUpdate(baseDir, expectedVersion string) error {
 	// 下载更新包
@@ -419,14 +407,12 @@ func (u *Updater) performLinuxUpdate(baseDir, expectedVersion string) error {
 		u.logger.Warn().Err(err).Msg("设置可执行权限失败")
 	}
 
-
 	// 退出应用（systemd会自动重启）
 	u.logger.Info().Msg("更新完成，程序将退出")
 	os.Exit(0)
 
 	return nil
 }
-
 
 // downloadFile 下载文件
 func (u *Updater) downloadFile(url, filePath string) error {
@@ -573,7 +559,6 @@ func (u *Updater) copyDirectory(src, dst string) error {
 	return nil
 }
 
-
 // moveDirectory 使用重命名方式移动目录内容，语义类似 mv
 func (u *Updater) moveDirectory(src, dst string) error {
 	srcInfo, err := os.Stat(src)
@@ -716,4 +701,3 @@ func (u *Updater) validatePackageVersion(tempDir, expectedVersion string) error 
 
 	return nil
 }
-

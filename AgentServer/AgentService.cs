@@ -49,7 +49,8 @@ namespace AgentServer
 
 		public void Update(AgentModel model)
 		{
-			agents[model.AgentId] = model;
+			if(agents.ContainsKey(model.AgentId))
+				agents[model.AgentId] = model;
 		}
 
 		public void Remove(string agentId)
