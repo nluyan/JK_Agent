@@ -85,8 +85,11 @@ func main() {
 	}
 	defer logWriter.Close()
 
+	// 同时输出日志到文件和控制台
+	multiWriter := zerolog.MultiLevelWriter(logWriter, os.Stdout)
+
 	program := &serviceProgram{
-		logger:     zerolog.New(logWriter).With().Timestamp().Logger(),
+		logger:     zerolog.New(multiWriter).With().Timestamp().Logger(),
 		stopSignal: make(chan struct{}),
 	}
 

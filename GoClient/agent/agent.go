@@ -3,8 +3,11 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"jkagent/goclient/config"
+	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/philippseith/signalr"
@@ -76,6 +79,19 @@ func (a *Agent) Start(ctx context.Context) error {
 // runOnce 运行一次连接循环
 func (a *Agent) runOnce(ctx context.Context) error {
 	a.logger.Debug().Msg("正在初始化SignalR连接...")
+
+	// 检查服务器是否可连接
+	a.logger.Debug().Msg("检查服务器是否可连接...")
+	// 移除serverURL中的/AgentHub后缀用于版本检查
+	serverBaseURL := a.serverURL
+	if strings.HasSuffix(serverBaseURL, "/AgentHub") {
+		serverBaseURL = strings.TrimSuffix(serverBaseURL, "/AgentHub")
+	}
+	versionURL := fmt.Sprintf("%s/update/%s/version.txt", serverBaseURL, a.group)
+	if _, err := a.fetchRemoteVersion(versionURL); err != nil {
+		return fmt.Errorf("服务器不可连接: %w", err)
+	}
+	a.logger.Debug().Msg("服务器连接检查成功")
 
 	// 创建接收器
 	receiver := &AgentReceiver{
@@ -369,4 +385,34 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 				Msg("PowerShell脚本执行完成并已回调")
 		}
 	}()
+}
+
+// fetchRemoteVersion 获取远程版本号（用于检查服务器连接）
+func (a *Agent) fetchRemoteVersion(url string) (string, error) {
+	a.logger.Info().Str("url", url).Msg("正在检查服务器连通性，尝试获取版本文件")
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		a.logger.Error().Err(err).Str("url", url).Msg("服务器连接失败")
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		a.logger.Error().Int("statusCode", resp.StatusCode).Str("url", url).Msgf("服务器返回错误状态码: %d", resp.StatusCode)
+		return "", fmt.Errorf("HTTP状态码: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		a.logger.Error().Err(err).Str("url", url).Msg("读取服务器响应失败")
+		return "", err
+	}
+
+	version := strings.TrimSpace(string(body))
+	a.logger.Info().Str("url", url).Str("version", version).Msg("服务器连接检查成功，获取到版本信息")
+	return version, nil
 }
