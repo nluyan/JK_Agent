@@ -16,7 +16,7 @@ namespace AgentServer
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
 
-		public async Task RegisterAgent(string boardSerial, string version, string ip, string group, int platform, string osArch, string osDesc)
+		public async Task RegisterAgent(string boardSerial, string version, string ip, string group, int platform, string osArch, string osDesc, string hostName)
 		{
 			service.Add(new AgentModel
 			{
@@ -27,9 +27,27 @@ namespace AgentServer
 				OSPlatform = platform,
 				OSArchitecture = osArch,
 				OSDescription = osDesc,
-				Group = group
+				Group = group,
+				HostName = hostName
 			});
 			Console.WriteLine("Agent Register:" + Context.ConnectionId);
+		}
+
+		public async Task UpdateAgent(string boardSerial, string version, string ip, string group, int platform, string osArch, string osDesc, string hostName)
+		{
+			service.Update(new AgentModel
+			{
+				AgentId = Context.ConnectionId,
+				IpAddress = ip,
+				BoardSerial = boardSerial,
+				Version = version,
+				OSPlatform = platform,
+				OSArchitecture = osArch,
+				OSDescription = osDesc,
+				Group = group,
+				HostName = hostName
+			});
+			Console.WriteLine("Agent Update:" + Context.ConnectionId);
 		}
 
 		public async Task PowerShellOutput(string terminalId, string message)

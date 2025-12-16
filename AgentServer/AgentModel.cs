@@ -17,5 +17,7 @@
 		public string OSArchitecture { get; set; } //x64, ARM64, x86
 
 		public string Group { get; set; }
+
+		public string HostName { get; set; }
 	}
 }
