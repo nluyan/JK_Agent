@@ -2,6 +2,7 @@ package agent
 
 import (
 	"net"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -123,4 +124,13 @@ func GetOSArch() string {
 // GetOSDesc 获取操作系统描述
 func GetOSDesc() string {
 	return runtime.GOOS + " " + runtime.GOARCH
+}
+
+// GetHostName 获取主机名
+func GetHostName() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return hostname
 }

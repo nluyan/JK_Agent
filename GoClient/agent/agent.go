@@ -149,6 +149,7 @@ func (a *Agent) registerClient(ctx context.Context) error {
 	osDesc := GetOSDesc()
 	macAddress := GetMacAddress()
 	allIP := GetAllIP()
+	hostName := GetHostName()
 
 	a.logger.Info().
 		Str("mac", macAddress).
@@ -158,6 +159,7 @@ func (a *Agent) registerClient(ctx context.Context) error {
 		Int("platform", platform).
 		Str("arch", osArch).
 		Str("os", osDesc).
+		Str("hostname", hostName).
 		Msg("注册代理信息")
 
 	// 调用服务器的RegisterAgent方法
@@ -169,6 +171,7 @@ func (a *Agent) registerClient(ctx context.Context) error {
 		platform,
 		osArch,
 		osDesc,
+		hostName,
 	)
 
 	if result.Error != nil {
