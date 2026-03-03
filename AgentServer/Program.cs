@@ -173,15 +173,27 @@ app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) 
 		return Results.BadRequest(new { success = false, message = "用户名或密码错误" });
 });
 
-app.MapGet("/api/agent/list", (AgentService service)
+if (app.Configuration["ApiAuth"] == "false")
+{
+	app.MapGet("/api/agent/list", (AgentService service)
+	=> service.GetAgents()).AllowAnonymous();
+	app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
+		=> await service.ExecutePowershellScript(dto, dto.Script)).AllowAnonymous();
+	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
+		=> await service.RemoteDesk(dto)).AllowAnonymous();
+}
+else
+{
+	app.MapGet("/api/agent/list", (AgentService service)
 	=> service.GetAgents()).RequireAuthorization("ApiPolicy");
-app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
-	=> await service.ExecutePowershellScript(dto, dto.Script)).RequireAuthorization("ApiPolicy");
-app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
-	=> await service.RemoteDesk(dto)).RequireAuthorization("ApiPolicy");
+	app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
+		=> await service.ExecutePowershellScript(dto, dto.Script)).RequireAuthorization("ApiPolicy");
+	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
+		=> await service.RemoteDesk(dto)).RequireAuthorization("ApiPolicy");
+}
 
 
-app.Run();
+	app.Run();
 
 
 void Install()
