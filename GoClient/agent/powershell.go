@@ -114,7 +114,8 @@ func buildWrapperScript(scriptPath, outPath, errPath string) string {
 	escapedOutPath := escapeForSingleQuotedPowerShell(outPath)
 	escapedErrPath := escapeForSingleQuotedPowerShell(errPath)
 
-	return `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+	return powerShellCompatibilityPrelude() + `
+[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $OutputEncoding=[System.Text.Encoding]::UTF8
 try {
     & '` + escapedScriptPath + `' 2>&1 | Out-File -FilePath '` + escapedOutPath + `' -Encoding UTF8
@@ -123,6 +124,42 @@ try {
     $_ | Out-File -FilePath '` + escapedErrPath + `' -Encoding UTF8
     exit 1
 }`
+}
+
+// powerShellCompatibilityPrelude provides the JSON cmdlet that is missing from
+// Windows PowerShell 2.0, which is still present on unpatched Windows 7 hosts.
+func powerShellCompatibilityPrelude() string {
+	return `if (-not (Get-Command ConvertTo-Json -ErrorAction SilentlyContinue)) {
+    try {
+        Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop
+    } catch {
+        throw "ConvertTo-Json is unavailable and System.Web.Extensions could not be loaded: $($_.Exception.Message)"
+    }
+
+    function ConvertTo-Json {
+        param(
+            [Parameter(ValueFromPipeline=$true)]$InputObject,
+            [int]$Depth = 2,
+            [switch]$Compress
+        )
+
+        begin { $items = @() }
+        process { $items += $InputObject }
+        end {
+            $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+            if ($Depth -gt 0) {
+                $serializer.RecursionLimit = $Depth + 10
+            }
+            if ($items.Count -eq 1) {
+                $value = $items[0]
+            } else {
+                $value = $items
+            }
+            $serializer.Serialize($value)
+        }
+    }
+}
+`
 }
 
 // escapeForSingleQuotedPowerShell 转义PowerShell单引号字符串

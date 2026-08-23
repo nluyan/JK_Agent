@@ -144,6 +144,16 @@ await Clients.Client(connectionId).SendAsync("ExecutePowershellScript", callId, 
 // 客户端会通过 PowershellScriptCallback 返回结果
 ```
 
+#### 特殊硬件采集命令
+
+继续调用同一个 `ExecutePowershellScript` 方法时，如果脚本内容（去掉首尾空白后）严格等于：
+
+```text
+__JK_AGENT_COLLECT_HARDWARE_INFO__
+```
+
+Go 客户端会在 Windows 上直接通过 WMI 采集硬件信息，不启动 PowerShell，结果仍通过原有的 `PowershellScriptCallback` 返回。这样可以兼容 Windows 7 PowerShell 2.0。
+
 脚本执行特性：
 - 自动处理 UTF-8/UTF-16 编码
 - 捕获标准输出和错误输出

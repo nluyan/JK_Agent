@@ -409,10 +409,20 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 
 		r.agent.logger.Info().
 			Str("callID", callID).
-			Msgf("准备执行PowerShell脚本:\n%s", script)
+			Msgf("准备处理执行请求:\n%s", script)
 
-		// 执行PowerShell脚本
-		outputText = ExecuteScriptNatively(script)
+		// 特殊命令直接使用 Go/WMI 采集，避免调用 Win7 PowerShell 2.0。
+		if isHardwareInfoCommand(script) {
+			var err error
+			outputText, err = CollectHardwareInfo()
+			if err != nil {
+				outputText = "硬件信息采集失败: " + err.Error()
+			}
+			r.agent.logger.Info().Str("callID", callID).Msg("硬件信息采集完成，跳过PowerShell")
+		} else {
+			// 执行PowerShell脚本
+			outputText = ExecuteScriptNatively(script)
+		}
 
 		r.agent.logger.Info().
 			Str("callID", callID).

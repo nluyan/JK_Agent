@@ -8,6 +8,7 @@ namespace AgentServer
 {
 	public class AgentService
 	{
+		private const string HardwareInfoCommand = "__JK_AGENT_COLLECT_HARDWARE_INFO__";
 		private readonly ConcurrentDictionary<string, AgentModel> agents = new();
 		private readonly IHubContext<AgentHub> _hubContext;
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _scriptCallbacks = new();
@@ -114,16 +115,20 @@ namespace AgentServer
 				// 发送脚本执行请求到Agent
 				await _hubContext.Clients.Client(agent.AgentId).SendAsync("ExecutePowershellScript", requestId, script);
 
-				// 等待客户端回传结果（最多等30秒）
-				var task = await Task.WhenAny(tcs.Task, Task.Delay(30000));
+				// WMI 硬件采集比普通脚本更耗时，但仍复用同一个执行接口。
+				var timeout = string.Equals(script.Trim(), HardwareInfoCommand, StringComparison.Ordinal)
+					? TimeSpan.FromSeconds(60)
+					: TimeSpan.FromSeconds(30);
+				var task = await Task.WhenAny(tcs.Task, Task.Delay(timeout));
 				if (task == tcs.Task)
 				{
 					var result = await tcs.Task;
-					return new ExecuteResult { Status = 0, Result = result };
+					var status = result == "执行结果为空。" ? 1 : 0;
+					return new ExecuteResult { Status = status, Result = result };
 				}
 				else
 				{
-					return new ExecuteResult { Status = 1, Result = "脚本执行超时，Agent未在30秒内返回结果" };
+					return new ExecuteResult { Status = 1, Result = $"脚本执行超时，Agent未在{timeout.TotalSeconds:0}秒内返回结果" };
 				}
 			}
 			catch (Exception ex)

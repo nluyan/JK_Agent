@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/StackExchange/wmi v1.2.1
 	github.com/kardianos/service v1.2.2
 	github.com/philippseith/signalr v0.0.0
 	github.com/rs/zerolog v1.34.0
@@ -14,6 +15,7 @@ require (
 	github.com/coder/websocket v1.8.13 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
+	github.com/go-ole/go-ole v1.2.5 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/teivah/onecontext v1.3.0 // indirect
