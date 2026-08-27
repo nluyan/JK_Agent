@@ -98,6 +98,11 @@ namespace AgentServer
 			service.HandleCaptureResult(callId, result);
 		}
 
+		public void PrinterDriverInstallCallback(string callId, string result)
+		{
+			service.HandlePrinterDriverInstallCallback(callId, result);
+		}
+
 		public void RemoteDeskCallback(string callId, string result)
 		{
 			// 同时处理PowerShellService的回调

@@ -14,6 +14,7 @@ namespace AgentServer
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _scriptCallbacks = new();
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _captureCallbacks = new();
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _remoteDeskCallbacks = new();
+		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _printerDriverInstallCallbacks = new();
 
 		IConfiguration config;
 
@@ -141,6 +142,72 @@ namespace AgentServer
 			}
 		}
 
+		public async Task<ExecuteResult> InstallPrinterDriver(PrinterDriverInstallDTO dto)
+		{
+			if (string.IsNullOrWhiteSpace(dto.DriverUrl))
+				return new ExecuteResult { Status = 1, Result = "驱动包地址不能为空" };
+
+			if (!Uri.TryCreate(dto.DriverUrl, UriKind.Absolute, out var driverUri)
+				|| (driverUri.Scheme != Uri.UriSchemeHttp && driverUri.Scheme != Uri.UriSchemeHttps))
+				return new ExecuteResult { Status = 1, Result = "驱动包地址必须是有效的 HTTP 或 HTTPS 地址" };
+
+			Console.WriteLine($"安装打印机驱动: {JsonSerializer.Serialize(dto)}");
+
+			var agent = GetAgentByDTO(dto);
+			if (agent == null)
+				return new ExecuteResult { Status = 1, Result = "未找到对应的Agent" };
+
+			var requestId = Guid.NewGuid().ToString();
+			var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+			_printerDriverInstallCallbacks.TryAdd(requestId, tcs);
+
+			try
+			{
+				await _hubContext.Clients.Client(agent.AgentId)
+					.SendAsync("InstallPrinterDriver", requestId, dto.DriverUrl);
+
+				var timeout = TimeSpan.FromMinutes(10);
+				var task = await Task.WhenAny(tcs.Task, Task.Delay(timeout));
+				if (task == tcs.Task)
+				{
+					var result = await tcs.Task;
+					var success = IsSuccessfulPrinterDriverResult(result);
+					return new ExecuteResult { Status = success ? 0 : 1, Result = result };
+				}
+
+				return new ExecuteResult
+				{
+					Status = 1,
+					Result = $"打印机驱动安装超时，Agent未在{timeout.TotalMinutes:0}分钟内返回结果"
+				};
+			}
+			catch (Exception ex)
+			{
+				return new ExecuteResult { Status = 1, Result = $"安装打印机驱动失败: {ex.Message}" };
+			}
+			finally
+			{
+				_printerDriverInstallCallbacks.TryRemove(requestId, out _);
+			}
+		}
+
+		private static bool IsSuccessfulPrinterDriverResult(string result)
+		{
+			if (string.IsNullOrWhiteSpace(result))
+				return false;
+
+			try
+			{
+				using var document = JsonDocument.Parse(result);
+				return document.RootElement.TryGetProperty("Success", out var success)
+					&& success.ValueKind == JsonValueKind.True;
+			}
+			catch (JsonException)
+			{
+				return false;
+			}
+		}
+
 		public async Task<string> RemoteDesk(RemoteDeskDTO dto)
 		{
 			Console.WriteLine($"执行RemoteDesk连接: {JsonSerializer.Serialize(dto)}");
@@ -200,6 +267,14 @@ namespace AgentServer
 		public void HandleScriptCallback(string requestId, string result)
 		{
 			if (_scriptCallbacks.TryRemove(requestId, out var tcs))
+			{
+				tcs.TrySetResult(result);
+			}
+		}
+
+		public void HandlePrinterDriverInstallCallback(string requestId, string result)
+		{
+			if (_printerDriverInstallCallbacks.TryRemove(requestId, out var tcs))
 			{
 				tcs.TrySetResult(result);
 			}

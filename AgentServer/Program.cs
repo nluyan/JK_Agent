@@ -179,6 +179,8 @@ if (app.Configuration["ApiAuth"] == "false")
 	=> service.GetAgents()).AllowAnonymous();
 	app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
 		=> await service.ExecutePowershellScript(dto, dto.Script)).AllowAnonymous();
+	app.MapPost("/api/agent/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
+		=> await service.InstallPrinterDriver(dto)).AllowAnonymous();
 	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
 		=> await service.RemoteDesk(dto)).AllowAnonymous();
 }
@@ -188,6 +190,8 @@ else
 	=> service.GetAgents()).RequireAuthorization("ApiPolicy");
 	app.MapPost("/api/agent/execute", async (AgentService service, ExecuteDTO dto)
 		=> await service.ExecutePowershellScript(dto, dto.Script)).RequireAuthorization("ApiPolicy");
+	app.MapPost("/api/agent/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
+		=> await service.InstallPrinterDriver(dto)).RequireAuthorization("ApiPolicy");
 	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
 		=> await service.RemoteDesk(dto)).RequireAuthorization("ApiPolicy");
 }

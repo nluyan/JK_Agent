@@ -155,6 +155,42 @@ internal class Agent
 					}
 				});
 
+
+				connection.On<string, string>("InstallPrinterDriver", async (callId, driverUrl) =>
+				{
+					Log.Information("收到InstallPrinterDriver请求: {CallId}, {DriverUrl}", callId, driverUrl);
+					try
+					{
+						var result = await PrinterDriverInstaller.InstallAsync(driverUrl, stoppingToken);
+						try
+						{
+							await connection.SendAsync("PrinterDriverInstallCallback", callId, result.ToJson(), stoppingToken);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, "发送打印机驱动安装结果失败: {Message}", sendEx.Message);
+						}
+					}
+					catch (Exception ex)
+					{
+						Log.Error(ex, "安装打印机驱动失败 {CallId}: {Message}", callId, ex.Message);
+						try
+						{
+							var result = new PrinterDriverInstallResult
+							{
+								Success = false,
+								Message = $"安装打印机驱动失败: {ex.Message}",
+								Output = ex.ToString()
+							};
+							await connection.SendAsync("PrinterDriverInstallCallback", callId, result.ToJson(), stoppingToken);
+						}
+						catch (Exception sendEx)
+						{
+							Log.Error(sendEx, "发送PrinterDriverInstallCallback失败: {Message}", sendEx.Message);
+						}
+					}
+				});
+
 				string ExecuteScriptNatively(string script)
 				{
 					var tempDir = Directory.GetCurrentDirectory();

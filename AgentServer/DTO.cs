@@ -19,6 +19,11 @@
 
 	public class RemoteDeskDTO : DTOBase { }
 
+	public class PrinterDriverInstallDTO : DTOBase
+	{
+		public string DriverUrl { get; set; }
+	}
+
 	public class LoginDto
 	{
 		public string Username { get; set; }
