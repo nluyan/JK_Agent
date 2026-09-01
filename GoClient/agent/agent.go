@@ -407,12 +407,19 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 		}()
 		outputText := "执行结果为空。"
 
-		r.agent.logger.Info().
-			Str("callID", callID).
-			Msgf("准备处理执行请求:\n%s", script)
+		if isSNMPCommand(script) {
+			r.agent.logger.Info().Str("callID", callID).Msg("准备处理SNMP特殊请求")
+		} else {
+			r.agent.logger.Info().
+				Str("callID", callID).
+				Msgf("准备处理执行请求:\n%s", script)
+		}
 
-		// 特殊命令直接使用 Go/WMI 采集，避免调用 Win7 PowerShell 2.0。
-		if isHardwareInfoCommand(script) {
+		// 特殊命令直接使用 Go 采集，避免调用 PowerShell。
+		if isSNMPCommand(script) {
+			outputText = executeSNMPCommand(script)
+			r.agent.logger.Info().Str("callID", callID).Msg("SNMP操作完成，跳过PowerShell")
+		} else if isHardwareInfoCommand(script) {
 			var err error
 			outputText, err = CollectHardwareInfo()
 			if err != nil {
@@ -424,9 +431,16 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 			outputText = ExecuteScriptNatively(script)
 		}
 
-		r.agent.logger.Info().
-			Str("callID", callID).
-			Msgf("PowerShell脚本执行结果:\n%s", outputText)
+		if isSNMPCommand(script) {
+			r.agent.logger.Info().
+				Str("callID", callID).
+				Int("resultBytes", len(outputText)).
+				Msg("SNMP执行请求已生成结果")
+		} else {
+			r.agent.logger.Info().
+				Str("callID", callID).
+				Msgf("执行请求结果:\n%s", outputText)
+		}
 
 		// 发送回调
 		if err := <-r.agent.client.Send("PowershellScriptCallback", callID, outputText); err != nil {
@@ -437,7 +451,7 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 		} else {
 			r.agent.logger.Info().
 				Str("callID", callID).
-				Msg("PowerShell脚本执行完成并已回调")
+				Msg("执行请求完成并已回调")
 		}
 	}()
 }

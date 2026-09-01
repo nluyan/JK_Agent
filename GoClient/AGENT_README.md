@@ -154,6 +154,62 @@ __JK_AGENT_COLLECT_HARDWARE_INFO__
 
 Go 客户端会在 Windows 上直接通过 WMI 采集硬件信息，不启动 PowerShell，结果仍通过原有的 `PowershellScriptCallback` 返回。这样可以兼容 Windows 7 PowerShell 2.0。
 
+#### 特殊 SNMP 操作命令
+
+SNMP 操作继续复用 `ExecutePowershellScript` 和 `PowershellScriptCallback`。脚本内容以 `__JK_AGENT_SNMP__` 开头，后面紧跟一个 JSON 对象；Go 客户端会直接执行 SNMP 请求，不启动 PowerShell。
+
+SNMP v2c GET 示例：
+
+```text
+__JK_AGENT_SNMP__
+{"operation":"get","target":"192.168.1.10","version":"2c","community":"public","oids":["1.3.6.1.2.1.1.1.0","1.3.6.1.2.1.1.5.0"]}
+```
+
+WALK 示例：
+
+```text
+__JK_AGENT_SNMP__
+{"operation":"walk","target":"192.168.1.10","version":"2c","community":"public","oid":"1.3.6.1.2.1.2.2","maxResults":5000}
+```
+
+SNMP v3 `authPriv` GET 示例：
+
+```text
+__JK_AGENT_SNMP__
+{"operation":"get","target":"192.168.1.10","version":"3","username":"snmp-user","securityLevel":"authPriv","authProtocol":"sha256","authPassphrase":"auth-password","privProtocol":"aes128","privPassphrase":"priv-password","oids":["1.3.6.1.2.1.1.1.0"]}
+```
+
+SET 示例：
+
+```text
+__JK_AGENT_SNMP__
+{"operation":"set","target":"192.168.1.10","version":"2c","community":"private","oid":"1.3.6.1.2.1.1.5.0","valueType":"string","value":"new-device-name"}
+```
+
+支持的操作：
+
+- `get`
+- `getnext`
+- `getbulk`（SNMP v2c/v3）
+- `walk`
+- `set`
+
+常用参数：
+
+- `target`：设备 IP 或主机名，必填。
+- `port`：默认 `161`。
+- `transport`：`udp` 或 `tcp`，默认 `udp`。
+- `version`：`1`、`2c` 或 `3`，默认 `2c`。
+- `timeoutSeconds`：单次请求超时，默认 10 秒，最大 60 秒。
+- `operationTimeoutSeconds`：整个操作超时，默认和最大均为 240 秒。
+- `retries`：重试次数，范围 0–5。
+- `maxRepetitions`：GETBULK/WALK 每次最大重复数，默认 25。
+- `maxResults`：WALK 最大结果数，默认 10000，最大 50000。
+
+SET 支持 `integer`、`string`/`octetString`、`base64`、`oid`、`gauge32`、`counter32`、`counter64`、`timeTicks` 和 `ipAddress`。返回值是 JSON，成功时 `success` 为 `true`；OctetString 同时提供 `valueBase64`，避免二进制数据丢失。
+
+SNMP community、SNMPv3 认证密码和加密密码属于敏感信息，不要写入日志或长期保存到脚本历史中；生产环境优先使用 SNMPv3 `authPriv`。
+
 脚本执行特性：
 - 自动处理 UTF-8/UTF-16 编码
 - 捕获标准输出和错误输出

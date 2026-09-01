@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/StackExchange/wmi v1.2.1
+	github.com/gosnmp/gosnmp v1.38.0 // keep Go 1.20/Windows 7 compatibility
 	github.com/kardianos/service v1.2.2
 	github.com/philippseith/signalr v0.0.0
 	github.com/rs/zerolog v1.34.0

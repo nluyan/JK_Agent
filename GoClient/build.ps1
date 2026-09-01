@@ -10,7 +10,7 @@ Write-Host ""
 $version = "1.0.0"
 if (Test-Path "config/settings.go") {
     $content = Get-Content "config/settings.go" -Raw
-    if ($content -match 'Version\s*=\s*"([^"]+)"') {
+    if ($content -match 'Version\s*[:=]\s*"([^"]+)"') {
         $version = $matches[1]
     }
 }

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
 ﻿﻿﻿﻿using System.Collections.Concurrent;
 using System.Text.Json;
@@ -9,6 +9,10 @@ namespace AgentServer
 	public class AgentService
 	{
 		private const string HardwareInfoCommand = "__JK_AGENT_COLLECT_HARDWARE_INFO__";
+		private const string SnmpCommandPrefix = "__JK_AGENT_SNMP__";
+		private const string PowerShellCommandType = "PowerShell";
+		private const string SnmpCommandType = "SNMP";
+		private const string HardwareInfoCommandType = "HardwareInfo";
 		private readonly ConcurrentDictionary<string, AgentModel> agents = new();
 		private readonly IHubContext<AgentHub> _hubContext;
 		private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _scriptCallbacks = new();
@@ -34,7 +38,7 @@ namespace AgentServer
 				{
 					var apiUrl = config["cmdbApi"];
 					using var httpClient = new HttpClient();
-					var content = new StringContent(JsonSerializer.Serialize(new 
+					var content = new StringContent(JsonSerializer.Serialize(new
 					{
 						type = "Access",
 						deviceInfo = model
@@ -99,8 +103,27 @@ namespace AgentServer
 
 		}
 
-		public async Task<ExecuteResult> ExecutePowershellScript(ExecuteDTO dto, string script)
+		public async Task<ExecuteResult> ExecutePowershellScript(ExecuteDTO dto, string script, string? commandType = null)
 		{
+			commandType = commandType?.Trim();
+			if (!string.IsNullOrWhiteSpace(commandType))
+			{
+				if (commandType.Equals(SnmpCommandType, StringComparison.OrdinalIgnoreCase))
+				{
+					var commandText = script.TrimStart();
+					if (!commandText.StartsWith(SnmpCommandPrefix, StringComparison.Ordinal))
+						script = SnmpCommandPrefix + script;
+				}
+				else if (commandType.Equals(HardwareInfoCommandType, StringComparison.OrdinalIgnoreCase))
+				{
+					script = HardwareInfoCommand;
+				}
+				else if (!commandType.Equals(PowerShellCommandType, StringComparison.OrdinalIgnoreCase))
+				{
+					return new ExecuteResult { Status = 1, Result = $"不支持的Agent命令类型: {commandType}" };
+				}
+			}
+
 			if(string.IsNullOrWhiteSpace(script))
 				throw new Exception("脚本内容不能为空");
 
@@ -116,15 +139,19 @@ namespace AgentServer
 				// 发送脚本执行请求到Agent
 				await _hubContext.Clients.Client(agent.AgentId).SendAsync("ExecutePowershellScript", requestId, script);
 
-				// WMI 硬件采集比普通脚本更耗时，但仍复用同一个执行接口。
-				var timeout = string.Equals(script.Trim(), HardwareInfoCommand, StringComparison.Ordinal)
+				// 原生硬件采集和 SNMP 操作比普通脚本更耗时，但仍复用同一个执行接口。
+				var trimmedScript = script.Trim();
+				var isSnmpCommand = trimmedScript.StartsWith(SnmpCommandPrefix, StringComparison.Ordinal);
+				var timeout = string.Equals(trimmedScript, HardwareInfoCommand, StringComparison.Ordinal)
 					? TimeSpan.FromSeconds(60)
-					: TimeSpan.FromSeconds(30);
+					: isSnmpCommand
+						? TimeSpan.FromMinutes(5)
+						: TimeSpan.FromSeconds(30);
 				var task = await Task.WhenAny(tcs.Task, Task.Delay(timeout));
 				if (task == tcs.Task)
 				{
 					var result = await tcs.Task;
-					var status = result == "执行结果为空。" ? 1 : 0;
+					var status = result == "执行结果为空。" || (isSnmpCommand && !IsSuccessfulSnmpResult(result)) ? 1 : 0;
 					return new ExecuteResult { Status = status, Result = result };
 				}
 				else
@@ -200,6 +227,23 @@ namespace AgentServer
 			{
 				using var document = JsonDocument.Parse(result);
 				return document.RootElement.TryGetProperty("Success", out var success)
+					&& success.ValueKind == JsonValueKind.True;
+			}
+			catch (JsonException)
+			{
+				return false;
+			}
+		}
+
+		private static bool IsSuccessfulSnmpResult(string result)
+		{
+			if (string.IsNullOrWhiteSpace(result))
+				return false;
+
+			try
+			{
+				using var document = JsonDocument.Parse(result);
+				return document.RootElement.TryGetProperty("success", out var success)
 					&& success.ValueKind == JsonValueKind.True;
 			}
 			catch (JsonException)

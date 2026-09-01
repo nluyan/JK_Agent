@@ -1,11 +1,22 @@
 param(
     [string]$PayloadDirectory = (Join-Path $PSScriptRoot "..\..\..\publish\win7-esm-lite"),
-    [string]$OutputPath = (Join-Path $PSScriptRoot "..\..\..\publish\JikeAgent-Go-Win7-x86-2.17-ESM-Lite.exe")
+    [string]$OutputPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $payload = [IO.Path]::GetFullPath($PayloadDirectory)
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $versionPath = Join-Path $payload "version.txt"
+    if (-not (Test-Path -LiteralPath $versionPath)) {
+        throw "Missing SFX version file: $versionPath"
+    }
+    $version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "SFX version is empty: $versionPath"
+    }
+    $OutputPath = Join-Path $PSScriptRoot "..\..\..\publish\JikeAgent-Go-Win7-x86-$version-ESM-Lite.exe"
+}
 $output = [IO.Path]::GetFullPath($OutputPath)
 $iexpress32 = Join-Path $env:SystemRoot "SysWOW64\iexpress.exe"
 $iexpress = if (Test-Path -LiteralPath $iexpress32) {
@@ -91,7 +102,7 @@ SourceFiles0=$sourcePath
 "@
 
     Set-Content -LiteralPath $sedPath -Value $sed -Encoding Ascii
-    $process = Start-Process -FilePath $iexpress -ArgumentList @("/N", "/Q", $sedPath) -Wait -PassThru
+    $process = Start-Process -FilePath $iexpress -ArgumentList @("/N", "/Q", $sedPath) -Wait -PassThru -WindowStyle Hidden
     if ($process.ExitCode -ne 0) {
         throw "IExpress failed with exit code $($process.ExitCode)"
     }
