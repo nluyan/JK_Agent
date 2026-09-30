@@ -231,46 +231,152 @@ agentApi.MapPost("/remotedesk", async (AgentService service, RemoteDeskDTO dto)
 
 void Install()
 {
-	if (!File.Exists(Path.Combine(Directory.GetCurrentDirectory(), "AgentServer")))
+	if (!OperatingSystem.IsLinux())
 	{
-		Console.WriteLine("没有找到AgentServer");
-		Environment.Exit(0);
+		Console.Error.WriteLine("--install 仅支持 Linux（systemd）。");
+		Environment.Exit(1);
+		return;
 	}
 
-	var file = "/etc/systemd/system/agentserver.service";
-	if (!File.Exists(file))
+	var dir = Directory.GetCurrentDirectory();
+	var binary = Path.Combine(dir, "AgentServer");
+	if (!File.Exists(binary))
 	{
-		var content = $@"[Unit]
+		Console.Error.WriteLine($"没有找到 {binary}");
+		Console.Error.WriteLine("请先把发布包整体解压到安装目录（例如 /opt/agentserver），cd 进去再执行 ./AgentServer --install");
+		Environment.Exit(1);
+		return;
+	}
+
+	// 发布包是在 Windows 上打的，zip 不一定带 Unix 权限位，解压出来可能没有可执行权限
+	File.SetUnixFileMode(binary,
+		UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+		UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+		UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+	// 本文件在 Windows 上是 CRLF，逐字字符串会把 \r 一起带进来。systemd 不会去掉行尾的 \r，
+	// ExecStart 会变成一个尾部带 \r 的路径而根本起不来，所以这里强制转成 LF。
+	var content = ($@"[Unit]
 Description=AgentServer
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory={Directory.GetCurrentDirectory()}
-ExecStart={Directory.GetCurrentDirectory()}/AgentServer
+WorkingDirectory={dir}
+ExecStart={binary}
 Restart=always
 RestartSec=5
-LimitNOFILE=65535
+TimeoutStopSec=30
+LimitNOFILE=65536
+Environment=ASPNETCORE_ENVIRONMENT=Production
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=AgentServer
 
 [Install]
-WantedBy=multi-user.target";
-		File.WriteAllText(file, content);
+WantedBy=multi-user.target").Replace("\r\n", "\n");
 
-		Process.Start("systemctl", "enable agentserver.service").WaitForExit();
-		Process.Start("systemctl", "start agentserver.service").WaitForExit();
-
-		Console.WriteLine("AgentServer installed.");
+	const string unitPath = "/etc/systemd/system/agentserver.service";
+	try
+	{
+		// 每次执行都重写：安装目录可能换过，升级时也必须让 systemd 读到新配置。
+		// 旧实现只在文件不存在时才写，结果升级时跑 --install 什么都不做，老进程还在跑。
+		File.WriteAllText(unitPath, content);
 	}
+	catch (UnauthorizedAccessException)
+	{
+		Console.Error.WriteLine($"写 {unitPath} 被拒绝，请用 root 或 sudo 执行。");
+		Environment.Exit(1);
+		return;
+	}
+	Console.WriteLine($"已写入 {unitPath}");
+	Console.WriteLine($"  WorkingDirectory={dir}");
+	Console.WriteLine($"  ExecStart={binary}");
+
+	if (RunSystemctl("daemon-reload") != 0)
+	{
+		Environment.Exit(1);
+	}
+	if (RunSystemctl("enable agentserver.service") != 0)
+	{
+		Environment.Exit(1);
+	}
+	// 用 restart 而不是 start：升级场景下服务本来就在跑，start 只会报 already active 然后什么也不做
+	if (RunSystemctl("restart agentserver.service") != 0)
+	{
+		Environment.Exit(1);
+	}
+
+	Console.WriteLine();
+	RunSystemctl("--no-pager status agentserver.service");
+	Console.WriteLine();
+	Console.WriteLine("服务已安装并启动。常用命令：");
+	Console.WriteLine("  systemctl status agentserver");
+	Console.WriteLine("  journalctl -u agentserver -f");
+	Console.WriteLine("  ./AgentServer --uninstall");
+	Console.WriteLine();
+	Console.WriteLine("端口与证书都在同目录的 appsettings.json（Port:Http / Port:Https / HttpsCert），");
+	Console.WriteLine("改完要 systemctl restart agentserver 才生效。");
 }
 
 void Uninstall()
 {
-	Process.Start("systemctl", "stop agentserver.service").WaitForExit();
-	Process.Start("systemctl", "disable agentserver.service").WaitForExit();
-	File.Delete("/etc/systemd/system/agentserver.service");
+	if (!OperatingSystem.IsLinux())
+	{
+		Console.Error.WriteLine("--uninstall 仅支持 Linux（systemd）。");
+		Environment.Exit(1);
+		return;
+	}
+
+	const string unitPath = "/etc/systemd/system/agentserver.service";
+	RunSystemctl("stop agentserver.service");
+	RunSystemctl("disable agentserver.service");
+	if (File.Exists(unitPath))
+	{
+		try
+		{
+			File.Delete(unitPath);
+		}
+		catch (UnauthorizedAccessException)
+		{
+			Console.Error.WriteLine($"删除 {unitPath} 被拒绝，请用 root 或 sudo 执行。");
+			Environment.Exit(1);
+			return;
+		}
+		Console.WriteLine($"已删除 {unitPath}");
+	}
+	else
+	{
+		Console.WriteLine($"{unitPath} 不存在，跳过删除。");
+	}
+	RunSystemctl("daemon-reload");
 	Console.WriteLine("AgentServer uninstalled.");
+}
+
+// systemctl 的输出直接透传到终端，这里只关心退出码
+int RunSystemctl(string arguments)
+{
+	try
+	{
+		var process = Process.Start("systemctl", arguments);
+		if (process == null)
+		{
+			Console.Error.WriteLine($"无法启动 systemctl {arguments}");
+			return -1;
+		}
+		process.WaitForExit();
+		if (process.ExitCode != 0)
+		{
+			Console.Error.WriteLine($"systemctl {arguments} 失败，退出码 {process.ExitCode}");
+		}
+		return process.ExitCode;
+	}
+	catch (Exception ex)
+	{
+		Console.Error.WriteLine($"执行 systemctl {arguments} 出错：{ex.Message}");
+		Console.Error.WriteLine("请确认这台机器用的是 systemd，并且以 root 身份执行。");
+		return -1;
+	}
 }
