@@ -8,6 +8,8 @@ namespace AgentServer.Pages
     [Authorize]
     public class IndexModel : PageModel
     {
+        private const int DefaultPageSize = 20;
+
         private readonly AgentService _agentService;
 
         public IndexModel(AgentService agentService)
@@ -17,9 +19,37 @@ namespace AgentServer.Pages
 
         public List<AgentModel> Agents { get; set; } = new();
 
-        public void OnGet()
+        public int TotalCount { get; set; }
+
+        public int FilteredCount { get; set; }
+
+        public int CurrentPage { get; set; } = 1;
+
+        public int PageSize { get; set; } = DefaultPageSize;
+
+        public int TotalPages { get; set; } = 1;
+
+        public string? IpFilter { get; set; }
+
+        public string? SerialFilter { get; set; }
+
+        public void OnGet(string? ip, string? sn, int pageNum = 1)
         {
-            Agents = _agentService.GetAgents();
+            IpFilter = string.IsNullOrWhiteSpace(ip) ? null : ip.Trim();
+            SerialFilter = string.IsNullOrWhiteSpace(sn) ? null : sn.Trim();
+
+            var allAgents = _agentService.GetAgents();
+            TotalCount = allAgents.Count;
+
+            var filtered = allAgents.Where(a =>
+                (IpFilter == null || (a.IpAddress ?? string.Empty).Contains(IpFilter, StringComparison.OrdinalIgnoreCase)) &&
+                (SerialFilter == null || (a.BoardSerial ?? string.Empty).Contains(SerialFilter, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            FilteredCount = filtered.Count;
+            TotalPages = Math.Max(1, (filtered.Count + DefaultPageSize - 1) / DefaultPageSize);
+            CurrentPage = Math.Clamp(pageNum, 1, TotalPages);
+            Agents = filtered.Skip((CurrentPage - 1) * PageSize).Take(PageSize).ToList();
         }
 
         public async Task<IActionResult> OnPostAsync(string agentId, string handler)
