@@ -202,34 +202,28 @@ app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) 
 		return Results.BadRequest(new { success = false, message = "用户名或密码错误" });
 });
 
-if (app.Configuration["ApiAuth"] == "false")
-{
-	app.MapGet("/api/agent/list", (AgentService service)
-	=> service.GetAgents()).AllowAnonymous();
-	app.MapPost("/api/agent/execute", async (AgentService service, HttpRequest request, ExecuteRequestDTO dto)
-		=> await service.ExecutePowershellScript(
-			dto.ToExecuteDTO(),
-			dto.GetScriptText(),
-			request.Headers["X-JK-Agent-Command"].FirstOrDefault())).AllowAnonymous();
-	app.MapPost("/api/agent/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
-		=> await service.InstallPrinterDriver(dto)).AllowAnonymous();
-	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
-		=> await service.RemoteDesk(dto)).AllowAnonymous();
-}
+// ApiAuth 只有显式等于 "false" 时才放开匿名访问；缺失或写成其它值一律按开启处理，
+// 避免线上 appsettings.json 漏配时静默退化成“任何人都能远程执行 PowerShell”。
+var apiAuthDisabled = app.Configuration["ApiAuth"] == "false";
+
+// 四个 /api/agent/* 端点只注册一次：原先 if/else 两个分支各写一份，
+// 以后新增端点或改签名极易只改一边，造成鉴权分支与匿名分支行为不一致。
+var agentApi = app.MapGroup("/api/agent");
+if (apiAuthDisabled)
+	agentApi.AllowAnonymous();
 else
-{
-	app.MapGet("/api/agent/list", (AgentService service)
-	=> service.GetAgents()).RequireAuthorization("ApiPolicy");
-	app.MapPost("/api/agent/execute", async (AgentService service, HttpRequest request, ExecuteRequestDTO dto)
-		=> await service.ExecutePowershellScript(
-			dto.ToExecuteDTO(),
-			dto.GetScriptText(),
-			request.Headers["X-JK-Agent-Command"].FirstOrDefault())).RequireAuthorization("ApiPolicy");
-	app.MapPost("/api/agent/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
-		=> await service.InstallPrinterDriver(dto)).RequireAuthorization("ApiPolicy");
-	app.MapPost("/api/agent/remotedesk", async (AgentService service, RemoteDeskDTO dto)
-		=> await service.RemoteDesk(dto)).RequireAuthorization("ApiPolicy");
-}
+	agentApi.RequireAuthorization("ApiPolicy");
+
+agentApi.MapGet("/list", (AgentService service) => service.GetAgents());
+agentApi.MapPost("/execute", async (AgentService service, HttpRequest request, ExecuteRequestDTO dto)
+	=> await service.ExecutePowershellScript(
+		dto.ToExecuteDTO(),
+		dto.GetScriptText(),
+		request.Headers["X-JK-Agent-Command"].FirstOrDefault()));
+agentApi.MapPost("/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
+	=> await service.InstallPrinterDriver(dto));
+agentApi.MapPost("/remotedesk", async (AgentService service, RemoteDeskDTO dto)
+	=> await service.RemoteDesk(dto));
 
 
 	app.Run();

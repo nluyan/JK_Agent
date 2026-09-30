@@ -25,8 +25,25 @@ namespace AgentServer
 			await base.OnConnectedAsync();
 		}
 
+		// Agent 与管理端共用同一个 /AgentHub，但两者的凭据不同：
+		// Agent 只持有 HubAuthToken，管理端则是通过 /Login 拿到 Cookie 的已认证用户。
+		// 不区分调用方的话，任一持有共享令牌的 Agent 都能调用 SendInput 对全舰队下发 PowerShell。
+		private bool IsAdminCaller => Context.User?.Identity?.IsAuthenticated == true;
+
+		private void EnsureAdminCaller(string method)
+		{
+			if (IsAdminCaller)
+				return;
+
+			logger.LogWarning("拒绝非管理端调用 {Method}: ConnectionId={ConnectionId}, RemoteIp={RemoteIp}",
+				method, Context.ConnectionId, Context.GetHttpContext()?.Connection.RemoteIpAddress);
+			throw new HubException($"{method} 仅允许已登录的管理端调用");
+		}
+
 		public async Task RegisterTerminal(string agentId)
 		{
+			EnsureAdminCaller(nameof(RegisterTerminal));
+
 			logger.LogDebug("Term Register: {ConnectionId}", Context.ConnectionId);
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
@@ -73,6 +90,8 @@ namespace AgentServer
 
 		public async Task SendInput(string agentId, string command)
 		{
+			EnsureAdminCaller(nameof(SendInput));
+
 			logger.LogInformation("执行终端命令: AgentId={AgentId}, TerminalId={TerminalId}", agentId, Context.ConnectionId);
 			logger.LogInformation("命令内容:{NewLine}{Command}", Environment.NewLine, command);
 			await Clients.Client(agentId).SendAsync("ExecutePowerShell", command, Context.ConnectionId);
@@ -80,6 +99,8 @@ namespace AgentServer
 
 		public async Task<List<string>> GetCompletion(string agentId, string commandLine, int cursorPosition)
 		{
+			EnsureAdminCaller(nameof(GetCompletion));
+
 			var terminalId = Context.ConnectionId;
 			var tcs = new TaskCompletionSource<List<string>>();
 			completionCallbacks.TryAdd(terminalId, tcs);
