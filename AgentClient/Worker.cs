@@ -17,6 +17,9 @@ namespace AgentClient
 	{
 		string serverUrl = string.Empty;
 		string group = string.Empty;
+		string hubAuthToken = string.Empty;
+		int startupJitterSeconds = Settings.DefaultStartupJitterSeconds;
+		int updateJitterSeconds = Settings.DefaultUpdateJitterSeconds;
 
 		protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 		{
@@ -41,6 +44,7 @@ namespace AgentClient
 			var node = JsonNode.Parse(settings);
 			serverUrl = node.Root["ServerUrl"]?.ToString();
 			group = node.Root["Group"]?.ToString();
+			hubAuthToken = node.Root["HubAuthToken"]?.ToString() ?? string.Empty;
 			
 			if (string.IsNullOrEmpty(serverUrl))
 			{
@@ -56,6 +60,30 @@ namespace AgentClient
 			
 			Log.Information($"配置加载成功 - ServerUrl: {serverUrl}, Group: {group}");
 
+			// 错峰配置：启动错峰避免大批Agent同时连接，升级错峰避免同时拉取升级包打满服务端带宽
+			startupJitterSeconds = ReadJitterSeconds(node.Root["StartupJitter"], Settings.DefaultStartupJitterSeconds);
+			updateJitterSeconds = ReadJitterSeconds(node.Root["UpdateJitter"], Settings.DefaultUpdateJitterSeconds);
+			Log.Information($"错峰配置 - 启动错峰上限: {startupJitterSeconds}秒, 升级错峰上限: {updateJitterSeconds}秒");
+
+			// 只提示令牌是否已配置，不打印令牌内容，避免凭据落进日志
+			Log.Information(hubAuthToken.Length > 0 ? "Hub鉴权令牌已配置" : "未配置HubAuthToken，将以无令牌方式连接AgentHub");
+
+			// 启动错峰：随机延迟后再连接服务器并开始检查更新，避免大批Agent同时冲击服务端
+			if (startupJitterSeconds > 0)
+			{
+				var startupDelay = TimeSpan.FromSeconds(Random.Shared.Next(startupJitterSeconds + 1));
+				Log.Information($"启动错峰，{startupDelay.TotalSeconds:0}秒后连接服务器");
+				try
+				{
+					await Task.Delay(startupDelay, stoppingToken);
+				}
+				catch (TaskCanceledException)
+				{
+					// 服务正在停止，直接退出
+					return;
+				}
+			}
+
 			// 启动定期更新检查任务
 			_ = Task.Run(async () =>
 			{
@@ -67,9 +95,10 @@ namespace AgentClient
 				{
 					try
 					{
-						await Task.Delay(updateCheckInterval, stoppingToken);
+						// 每轮间隔叠加抖动，避免长期运行后所有Agent的检查请求对齐
+						await Task.Delay(JitterInterval(updateCheckInterval), stoppingToken);
 						//Log.Debug("执行定期更新检查...");
-						await CheckAndUpdate(serverUrl);
+						await CheckAndUpdate(serverUrl, stoppingToken);
 					}
 					catch (TaskCanceledException)
 					{
@@ -84,18 +113,18 @@ namespace AgentClient
 				}
 			}, stoppingToken);
 
-			var agent = new Agent($"{serverUrl}/AgentHub", group);
+			var agent = new Agent($"{serverUrl}/AgentHub", group, hubAuthToken);
 			agent.OnCheckUpdate += async (s, e) =>
 			{
 				Log.Debug("收到手动更新检查请求...");
-				await CheckAndUpdate(serverUrl);
+				await CheckAndUpdate(serverUrl, stoppingToken);
 			};
 			await agent.Start(stoppingToken);
 		}
 
 		bool isCheckingUpdate = false;
 
-		async Task CheckAndUpdate(string serverUrl)
+		async Task CheckAndUpdate(string serverUrl, CancellationToken stoppingToken)
 		{
 			if(isCheckingUpdate)
 			{
@@ -125,6 +154,30 @@ namespace AgentClient
 				if (new Version(remoteVersion) > new Version(Settings.Version))
 				{
 					Log.Information($"发现新版本: {remoteVersion}，当前版本: {Settings.Version} 开始下载更新...");
+
+					// 升级错峰：随机延迟后再下载，避免大批Agent同时拉取升级包打满服务端带宽
+					if (updateJitterSeconds > 0)
+					{
+						var jitterDelay = TimeSpan.FromSeconds(Random.Shared.Next(updateJitterSeconds + 1));
+						Log.Information($"升级错峰，{jitterDelay.TotalSeconds:0}秒后开始下载更新");
+						try
+						{
+							await Task.Delay(jitterDelay, stoppingToken);
+						}
+						catch (TaskCanceledException)
+						{
+							// 服务正在停止，放弃本次更新
+							return;
+						}
+
+						// 等待期间服务端版本可能已经变化，下载前重新确认一次
+						remoteVersion = (await httpClient.GetStringAsync(remoteVersionUrl)).Trim();
+						if (string.IsNullOrEmpty(remoteVersion) || new Version(remoteVersion) <= new Version(Settings.Version))
+						{
+							Log.Information($"升级错峰等待后无需更新，远程版本: {remoteVersion}");
+							return;
+						}
+					}
 
 					// 下载更新器和新版本
 					if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -262,6 +315,25 @@ namespace AgentClient
 				Log.Error(ex, $"下载文件失败 {url} -> {filePath}: {ex.Message}");
 				throw; // 重新抛出异常，让上层处理
 			}
+		}
+
+		// 读取错峰配置（秒）：未配置时使用默认值，负数表示关闭错峰
+		static int ReadJitterSeconds(JsonNode? node, int defaultValue)
+		{
+			var raw = node?.ToString();
+			if (string.IsNullOrWhiteSpace(raw) || !int.TryParse(raw, out var value))
+				return defaultValue;
+			return value < 0 ? 0 : value;
+		}
+
+		// 给检查间隔叠加 ±30% 抖动，避免长期运行后所有Agent的检查请求对齐
+		static TimeSpan JitterInterval(TimeSpan interval)
+		{
+			if (interval <= TimeSpan.Zero)
+				return interval;
+			var span = interval.TotalMilliseconds * 0.3;
+			var offset = Random.Shared.NextDouble() * 2 * span - span;
+			return TimeSpan.FromMilliseconds(Math.Max(0, interval.TotalMilliseconds + offset));
 		}
 	}
 }

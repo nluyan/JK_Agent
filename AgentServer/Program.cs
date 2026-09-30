@@ -23,19 +23,22 @@ if (args.Contains("--uninstall"))
 
 var builder = WebApplication.CreateBuilder(args);
 
+// HTTPS 证书只解析一次并缓存：PKCS#12 解密开销很大（实测每次 TLS 握手约消耗 72ms CPU），
+// 上千台 Agent 同时重连时会打满 CPU 并触发握手超时雪崩。
+var httpsCertificate = new Lazy<X509Certificate2>(() =>
+	X509CertificateLoader.LoadPkcs12(
+		Convert.FromBase64String(builder.Configuration["HttpsCert:Data"] ?? string.Empty),
+		builder.Configuration["HttpsCert:Password"]));
+
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
 	serverOptions.ListenAnyIP(int.Parse(builder.Configuration["Port:Http"]));
 	serverOptions.ListenAnyIP(int.Parse(builder.Configuration["Port:Https"]), listenOptions => listenOptions.UseHttps(c =>
 	{
-		c.ServerCertificateSelector = (connectionContext, host) =>
-		{
-			var cert = Convert.FromBase64String(builder.Configuration["HttpsCert:Data"]);
-			var password = builder.Configuration["HttpsCert:Password"];
-			return new X509Certificate2(cert, password);
-		};
+		c.ServerCertificateSelector = (connectionContext, host) => httpsCertificate.Value;
 	}));
 	serverOptions.Limits.MaxRequestBodySize = 100 * 1024 * 1024;
+	serverOptions.AddServerHeader = false;   // 不返回 Server: Kestrel 响应头，避免指纹泄露
 });
 
 builder.Services.AddRazorPages();
@@ -45,7 +48,9 @@ builder.Services.AddSignalR(o =>
 	o.EnableDetailedErrors = true;
 }).AddMessagePackProtocol();
 
-IdentityModelEventSource.ShowPII = true;
+var isDevelopment = builder.Environment.IsDevelopment();
+// ShowPII 会把令牌里的身份信息写进异常与诊断日志，仅开发环境开启
+IdentityModelEventSource.ShowPII = isDevelopment;
 
 var issuer = builder.Configuration["Jwt:Issuer"];
 var authority = builder.Configuration["Jwt:Authority"];
@@ -99,13 +104,13 @@ builder.Services
 		   {
 			   OnMessageReceived = ctx =>
 			   {
-				   Console.WriteLine($"收到验证请求: {ctx.Request.Path} \ntoken: {ctx.Request.Headers.Authorization}");
+				   if (isDevelopment) Console.WriteLine($"收到验证请求: {ctx.Request.Path}");   // 不输出Authorization头：Bearer令牌落盘等于泄露凭据
 				   return Task.CompletedTask;
 			   },
 			   OnTokenValidated = ctx =>
 			   {
 
-				   Console.WriteLine("验证通过:" + ctx.Principal.Identity.Name);
+				   if (isDevelopment) Console.WriteLine("验证通过:" + ctx.Principal?.Identity?.Name);
 				   return Task.CompletedTask;
 			   },
 			   OnAuthenticationFailed = ctx =>
@@ -128,6 +133,12 @@ builder.Services.AddAuthorization(options =>
 	});
 });
 
+// CMDB上报改用IHttpClientFactory复用连接：上千台Agent注册/重连时避免每次new HttpClient耗尽端口
+builder.Services.AddHttpClient(AgentService.CmdbHttpClientName, client =>
+{
+	client.Timeout = TimeSpan.FromSeconds(15);
+});
+
 builder.Services.AddSingleton<AgentService>();
 builder.Services.AddSingleton<JwtService>();
 
@@ -139,6 +150,12 @@ builder.Services.AddCors(cors => cors
 		.WithExposedHeaders("*")));
 
 var app = builder.Build();
+
+// 部署前提醒：下面两项处于关闭状态时，任何能访问端口的人都能对Agent下发命令
+if (string.IsNullOrEmpty(app.Configuration["HubAuthToken"]))
+	app.Logger.LogWarning("未配置 HubAuthToken，/AgentHub 处于无鉴权状态：任何能访问该端口的人都可以连接Hub并向Agent下发命令");
+if (app.Configuration["ApiAuth"] == "false")
+	app.Logger.LogWarning("ApiAuth=false，/api/agent/* 允许匿名调用（含远程执行PowerShell），生产环境建议开启");
 
 app.UseCors();
 if (!app.Environment.IsDevelopment())
@@ -152,6 +169,18 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// Hub鉴权放在HTTP层：令牌不对直接返回401，而不是先接受WebSocket连接再Abort。
+// 后者会让客户端认为“连接成功过”，SignalR的重连计数被清零，从而陷入每秒数次的高速重连循环；
+// 2200台Agent令牌配错时足以把服务端打满。
+app.Use(async (context, next) =>
+{
+	if (context.Request.Path.StartsWithSegments("/AgentHub") && !HubAuth.IsValid(app.Configuration, context))
+	{
+		context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		return;
+	}
+	await next(context);
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -228,6 +257,7 @@ WorkingDirectory={Directory.GetCurrentDirectory()}
 ExecStart={Directory.GetCurrentDirectory()}/AgentServer
 Restart=always
 RestartSec=5
+LimitNOFILE=65535
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=AgentServer

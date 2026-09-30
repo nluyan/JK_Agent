@@ -174,6 +174,10 @@ func main() {
 	// 创建Agent
 
 	program.agent = agent.NewAgent(settings.ServerURL, settings.Group, program.logger)
+	// 启动错峰：随机延迟后再连接服务器，避免大批Agent同时冲击服务端
+	program.agent.SetStartupJitter(time.Duration(settings.StartupJitterSeconds()) * time.Second)
+	// Hub鉴权：服务端配置了HubAuthToken后，连接必须携带同样的令牌
+	program.agent.SetHubToken(settings.HubAuthToken)
 
 
 	// 创建Updater
@@ -182,6 +186,14 @@ func main() {
 		checkInterval = 10 * time.Minute // 默认10分钟
 	}
 	program.updater = agent.NewUpdater(settings.ServerURL, settings.Group, checkInterval, program.logger, settings.Debug)
+	// 启动错峰 + 升级错峰：随机延迟检查与下载，避免大批Agent同时拉取升级包打满服务端带宽
+	program.updater.SetStartupJitter(time.Duration(settings.StartupJitterSeconds()) * time.Second)
+	program.updater.SetUpdateJitter(time.Duration(settings.UpdateJitterSeconds()) * time.Second)
+	program.logger.Info().
+		Int("startupJitterSeconds", settings.StartupJitterSeconds()).
+		Int("updateJitterSeconds", settings.UpdateJitterSeconds()).
+		Bool("hubAuthEnabled", settings.HubAuthToken != "").
+		Msg("错峰配置已加载")
 
 
 	// 设置CheckUpdate事件处理器（手动触发更新检查）

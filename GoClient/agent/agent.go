@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"jkagent/goclient/config"
+	"math/rand"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
@@ -28,6 +31,8 @@ type Agent struct {
 	onCheckUpdate     EventHandler
 	stopChan          chan struct{}
 	onRemoteDeskReady chan struct{}
+	startupJitter     time.Duration // 启动错峰上限，实际延迟在 0 到该值之间随机取值
+	hubToken          string        // Hub鉴权令牌，需与服务端HubAuthToken一致；为空表示不携带
 }
 
 // NewAgent 创建新的Agent实例
@@ -88,8 +93,100 @@ func (a *Agent) SetOnCheckUpdate(handler EventHandler) {
 	a.onCheckUpdate = handler
 }
 
+// SetHubToken 设置Hub鉴权令牌；服务端配置了HubAuthToken时必须设置，否则连接会被拒绝
+func (a *Agent) SetHubToken(token string) {
+	a.hubToken = token
+}
+
+// getHubConnectionURL 返回带鉴权令牌的Hub地址；未配置令牌时与getCurrentServerURL一致。
+// 令牌只在这里拼接，日志一律使用getCurrentServerURL，避免凭据落进日志。
+func (a *Agent) getHubConnectionURL() string {
+	hubURL := a.getCurrentServerURL()
+	if a.hubToken == "" {
+		return hubURL
+	}
+	separator := "?"
+	if strings.Contains(hubURL, "?") {
+		separator = "&"
+	}
+	return hubURL + separator + "access_token=" + url.QueryEscape(a.hubToken)
+}
+
+// SetStartupJitter 设置启动错峰上限，实际启动延迟在 0 到该值之间随机取值
+func (a *Agent) SetStartupJitter(jitter time.Duration) {
+	if jitter < 0 {
+		jitter = 0
+	}
+	a.startupJitter = jitter
+}
+
+// startupDelay 计算本次启动的错峰延迟
+func (a *Agent) startupDelay() time.Duration {
+	if a.startupJitter <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(a.startupJitter) + 1))
+}
+
+const (
+	// initialRetryDelay 连接失败后的首次重试间隔
+	initialRetryDelay = 5 * time.Second
+	// maxRetryDelay 连接失败后的最大重试间隔
+	maxRetryDelay = 5 * time.Minute
+	// agentUpdateInterval 定期上报Agent信息的基准间隔
+	agentUpdateInterval = 1 * time.Minute
+	// stableConnectionDuration 连接保持超过该时长即视为服务端可达，重连时重置退避间隔
+	stableConnectionDuration = 1 * time.Minute
+)
+
+// errConnectionClosed 连接建立成功后被关闭，外层循环据此重建客户端
+var errConnectionClosed = errors.New("SignalR连接已关闭，准备重新连接")
+
+// nextRetryDelay 按指数退避计算下一次重试间隔，上限为 maxRetryDelay
+func nextRetryDelay(current time.Duration) time.Duration {
+	next := current * 2
+	if next <= 0 || next > maxRetryDelay {
+		return maxRetryDelay
+	}
+	return next
+}
+
+// shouldResetRetryDelay 判断连接中断后是否应把退避间隔重置回初始值：
+// 连接曾建立并稳定保持一段时间，说明服务端可达，应尽快重连；
+// 刚连上就断开的抖动场景继续退避，避免大批Agent高频重连冲击服务端。
+func shouldResetRetryDelay(err error, uptime time.Duration) bool {
+	return errors.Is(err, errConnectionClosed) && uptime >= stableConnectionDuration
+}
+
+// jitterDuration 在基准时长上叠加 ±30% 抖动，避免大批Agent同时重连或同时发起请求
+func jitterDuration(base time.Duration) time.Duration {
+	if base <= 0 {
+		return base
+	}
+	span := int64(base) * 3 / 5
+	return time.Duration(int64(base) + rand.Int63n(span+1) - span/2)
+}
+
 // Start 启动Agent服务
 func (a *Agent) Start(ctx context.Context) error {
+	// 启动错峰：随机延迟后再连接，避免大批Agent同时冲击服务端
+	if delay := a.startupDelay(); delay > 0 {
+		a.logger.Info().Msgf("启动错峰，%s后连接服务器", delay.Round(time.Second))
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			a.logger.Info().Msg("Agent服务停止")
+			return ctx.Err()
+		case <-a.stopChan:
+			a.logger.Info().Msg("Agent服务手动停止")
+			return nil
+		}
+	}
+
+	// SignalR库内部的退避重连在持续失败约15分钟后会放弃（状态转为ClientClosed），
+	// 由下面的外层循环负责重建客户端，保证Agent永不退出。
+	retryDelay := initialRetryDelay
+
 	// 无限循环确保Agent永不退出
 	for {
 		select {
@@ -102,20 +199,32 @@ func (a *Agent) Start(ctx context.Context) error {
 		default:
 		}
 
+		startedAt := time.Now()
 		if err := a.runOnce(ctx); err != nil {
 			a.logger.Error().Err(err).Msg("Agent服务异常")
-			a.logger.Warn().Msg("5秒后将重新启动Agent服务...")
 
-			// 等待5秒后重试
+			// 连接曾稳定保持过说明服务端可达，重置退避间隔，
+			// 避免长期运行后重连间隔一直停留在最大值导致恢复缓慢
+			if shouldResetRetryDelay(err, time.Since(startedAt)) {
+				retryDelay = initialRetryDelay
+			}
+
+			// 指数退避 + 抖动后重试，避免大批Agent同时重连
+			delay := jitterDuration(retryDelay)
+			a.logger.Warn().Msgf("%s后将重新启动Agent服务...", delay.Round(time.Second))
+
 			select {
-			case <-time.After(5 * time.Second):
-				continue
+			case <-time.After(delay):
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-a.stopChan:
 				return nil
 			}
+			retryDelay = nextRetryDelay(retryDelay)
+			continue
 		}
+
+		retryDelay = initialRetryDelay
 	}
 }
 
@@ -141,7 +250,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	// 创建SignalR客户端
 	client, err := signalr.NewClient(ctx,
-		signalr.WithHttpConnection(ctx, a.getCurrentServerURL(), signalr.WithTransports(signalr.TransportWebSockets)),
+		signalr.WithHttpConnection(ctx, a.getHubConnectionURL(), signalr.WithTransports(signalr.TransportWebSockets)),
 		signalr.WithReceiver(receiver),
 		signalr.TransferFormat(signalr.TransferFormatBinary), // 使用MessagePack，仅在 WebSockets 传输上使用
 	)
@@ -158,8 +267,11 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	cancelObserve := client.ObserveStateChanged(stateChan)
 	defer cancelObserve()
 
+	// 连接彻底关闭时由该通道通知，避免runOnce一直阻塞导致Agent假死
+	connClosed := make(chan struct{})
+
 	// 状态监控协程
-	go a.monitorState(ctx, stateChan)
+	go a.monitorState(ctx, stateChan, connClosed)
 
 	// 启动客户端
 	client.Start()
@@ -182,17 +294,28 @@ func (a *Agent) runOnce(ctx context.Context) error {
 
 	// 等待连接断开或取消
 	select {
-	case <-ctx.Done():
-		client.Stop()
-		return ctx.Err()
 	case <-a.stopChan:
 		client.Stop()
 		return nil
+	case <-ctx.Done():
+		client.Stop()
+		return ctx.Err()
+	case <-connClosed:
+		client.Stop()
+		// 正常停止时同样会收到连接关闭事件，不要当成异常处理
+		select {
+		case <-a.stopChan:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return errConnectionClosed
+		}
 	}
 }
 
-// monitorState 监控连接状态
-func (a *Agent) monitorState(ctx context.Context, stateChan <-chan signalr.ClientState) {
+// monitorState 监控连接状态，连接彻底关闭时通过 connClosed 通知调用方重建连接
+func (a *Agent) monitorState(ctx context.Context, stateChan <-chan signalr.ClientState, connClosed chan<- struct{}) {
 	for state := range stateChan {
 		switch state {
 		case signalr.ClientConnecting:
@@ -204,6 +327,9 @@ func (a *Agent) monitorState(ctx context.Context, stateChan <-chan signalr.Clien
 			}
 		case signalr.ClientClosed:
 			a.logger.Warn().Msg("连接已关闭")
+			// 通知 runOnce 连接已彻底关闭，由外层循环重建客户端
+			close(connClosed)
+			return
 		}
 	}
 }
@@ -271,20 +397,21 @@ func (a *Agent) Stop() {
 
 // startPeriodicUpdate 启动定期更新代理信息的任务
 func (a *Agent) startPeriodicUpdate(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
 	a.logger.Info().Msg("定期更新任务已启动，每1分钟更新一次代理信息")
 
 	for {
+		// 间隔叠加抖动，避免大批Agent同时上报形成周期性尖峰
+		timer := time.NewTimer(jitterDuration(agentUpdateInterval))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			a.logger.Info().Msg("定期更新任务停止（上下文取消）")
 			return
 		case <-a.stopChan:
+			timer.Stop()
 			a.logger.Info().Msg("定期更新任务停止（服务停止）")
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			// 调用UpdateAgent接口更新代理信息
 			if err := a.updateAgent(ctx); err != nil {
 				a.logger.Error().Err(err).Msg("更新代理信息失败")

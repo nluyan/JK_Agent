@@ -1,4 +1,4 @@
-﻿﻿﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -6,13 +6,28 @@ using System.Text;
 
 namespace AgentServer
 {
-	public class AgentHub(AgentService service) : Hub
+	public class AgentHub(AgentService service, ILogger<AgentHub> logger, IConfiguration configuration) : Hub
 	{
 		static readonly ConcurrentDictionary<string, TaskCompletionSource<List<string>>> completionCallbacks = new();
 
+		// 兜底校验：正常情况下未通过鉴权的连接已经在HTTP层被401拦掉，
+		// 这里再挡一次，防止绕过中间件直连Hub
+		public override async Task OnConnectedAsync()
+		{
+			if (!HubAuth.IsValid(configuration, Context.GetHttpContext()))
+			{
+				logger.LogWarning("拒绝未授权的AgentHub连接: RemoteIp={RemoteIp}",
+					Context.GetHttpContext()?.Connection.RemoteIpAddress);
+				Context.Abort();
+				return;
+			}
+
+			await base.OnConnectedAsync();
+		}
+
 		public async Task RegisterTerminal(string agentId)
 		{
-			Console.WriteLine("Term Register:" + Context.ConnectionId);
+			logger.LogDebug("Term Register: {ConnectionId}", Context.ConnectionId);
 			await Clients.Client(agentId).SendAsync("RegisterTerminal", Context.ConnectionId);
 		}
 
@@ -30,7 +45,7 @@ namespace AgentServer
 				Group = group,
 				HostName = hostName
 			});
-			Console.WriteLine("Agent Register:" + Context.ConnectionId);
+			logger.LogInformation("Agent Register: {ConnectionId}, Serial={Serial}, Host={HostName}", Context.ConnectionId, boardSerial, hostName);
 		}
 
 		public async Task UpdateAgent(string boardSerial, string version, string ip, string group, int platform, string osArch, string osDesc, string hostName)
@@ -47,7 +62,8 @@ namespace AgentServer
 				Group = group,
 				HostName = hostName
 			});
-			Console.WriteLine("Agent Update:" + Context.ConnectionId);
+			// 每台Agent每分钟都会上报一次，属于高频心跳，降到Debug避免刷爆日志
+			logger.LogDebug("Agent Update: {ConnectionId}", Context.ConnectionId);
 		}
 
 		public async Task PowerShellOutput(string terminalId, string message)
@@ -57,6 +73,8 @@ namespace AgentServer
 
 		public async Task SendInput(string agentId, string command)
 		{
+			logger.LogInformation("执行终端命令: AgentId={AgentId}, TerminalId={TerminalId}", agentId, Context.ConnectionId);
+			logger.LogInformation("命令内容:{NewLine}{Command}", Environment.NewLine, command);
 			await Clients.Client(agentId).SendAsync("ExecutePowerShell", command, Context.ConnectionId);
 		}
 

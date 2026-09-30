@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"jkagent/goclient/config"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,6 +33,8 @@ type Updater struct {
 	stopChan          chan struct{}
 	ctx               context.Context
 	onCheckUpdateFunc func()
+	startupJitter     time.Duration // 启动错峰上限，首次检查更新前随机延迟
+	updateJitter      time.Duration // 升级错峰上限，发现新版本后随机延迟再下载
 }
 
 // NewUpdater 创建新的Updater实例
@@ -53,6 +56,22 @@ func NewUpdater(serverURL, group string, checkInterval time.Duration, logger zer
 // SetOnCheckUpdate 设置手动检查更新回调
 func (u *Updater) SetOnCheckUpdate(handler func()) {
 	u.onCheckUpdateFunc = handler
+}
+
+// SetStartupJitter 设置启动错峰上限，首次检查更新前会在 0 到该值之间随机延迟
+func (u *Updater) SetStartupJitter(jitter time.Duration) {
+	if jitter < 0 {
+		jitter = 0
+	}
+	u.startupJitter = jitter
+}
+
+// SetUpdateJitter 设置升级错峰上限，发现新版本后会在 0 到该值之间随机延迟再下载
+func (u *Updater) SetUpdateJitter(jitter time.Duration) {
+	if jitter < 0 {
+		jitter = 0
+	}
+	u.updateJitter = jitter
 }
 
 // Start 启动定期更新检查
@@ -88,12 +107,19 @@ func (u *Updater) CheckNow() {
 
 // periodicCheck 定期检查更新
 func (u *Updater) periodicCheck() {
-	ticker := time.NewTicker(u.checkInterval)
-	defer ticker.Stop()
+	// 启动错峰：随机延迟后再开始首次检查，避免大批Agent同时请求version.txt
+	if delay := u.startupDelay(); delay > 0 {
+		fmt.Printf("[AutoUpdate] 启动错峰，%s后开始首次更新检查\n", delay.Round(time.Second))
+		if !u.sleep(delay) {
+			return
+		}
+	}
 
 	for {
+		// 每轮间隔叠加抖动，避免长期运行后所有Agent的检查请求对齐
+		timer := time.NewTimer(jitterDuration(u.checkInterval))
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			fmt.Println("[AutoUpdate] 开始执行一次定期更新检查")
 			if err := u.checkAndUpdate(); err != nil {
 				fmt.Printf("[AutoUpdate] 定期更新检查失败: %v\n", err)
@@ -102,12 +128,14 @@ func (u *Updater) periodicCheck() {
 				}
 			}
 		case <-u.stopChan:
+			timer.Stop()
 			fmt.Println("[AutoUpdate] 定期更新检查已停止")
 			if u.enableDebug {
 				u.logger.Debug().Msg("定期更新检查已停止")
 			}
 			return
 		case <-u.ctx.Done():
+			timer.Stop()
 			fmt.Println("[AutoUpdate] 定期更新检查上下文取消")
 			if u.enableDebug {
 				u.logger.Debug().Msg("定期更新检查上下文取消")
@@ -115,6 +143,33 @@ func (u *Updater) periodicCheck() {
 			return
 
 		}
+	}
+}
+
+// startupDelay 计算首次更新检查前的错峰延迟
+func (u *Updater) startupDelay() time.Duration {
+	if u.startupJitter <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(u.startupJitter) + 1))
+}
+
+// sleep 等待指定时长，期间可被停止信号中断；返回false表示已被中断
+func (u *Updater) sleep(duration time.Duration) bool {
+	if duration <= 0 {
+		return true
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-u.stopChan:
+		return false
+	case <-u.ctx.Done():
+		return false
 	}
 }
 
@@ -184,6 +239,32 @@ func (u *Updater) checkAndUpdate() error {
 			Str("remoteVersion", remoteVersion).
 			Str("currentVersion", config.Default.Version).
 			Msg("发现新版本，开始下载更新")
+	}
+
+	// 升级错峰：随机延迟后再下载，避免大批Agent同时拉取升级包打满服务端带宽
+	if u.updateJitter > 0 {
+		delay := time.Duration(rand.Int63n(int64(u.updateJitter) + 1))
+		fmt.Printf("[AutoUpdate] 升级错峰，%s后开始下载更新\n", delay.Round(time.Second))
+		if u.enableDebug {
+			u.logger.Info().
+				Str("delay", delay.Round(time.Second).String()).
+				Msg("升级错峰等待")
+		}
+		if !u.sleep(delay) {
+			fmt.Println("[AutoUpdate] 升级错峰等待被中断，跳过本次更新")
+			return nil
+		}
+
+		// 等待期间服务端版本可能已经变化，下载前重新确认一次
+		latestVersion, err := u.fetchRemoteVersion(remoteVersionURL)
+		if err != nil {
+			return fmt.Errorf("重新获取远程版本失败: %w", err)
+		}
+		if !u.isNewVersion(latestVersion, config.Default.Version) {
+			fmt.Printf("[AutoUpdate] 错峰等待后版本已变化，跳过本次更新。远程版本: %s\n", latestVersion)
+			return nil
+		}
+		remoteVersion = latestVersion
 	}
 
 	// 执行更新流程

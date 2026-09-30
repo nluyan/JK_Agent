@@ -7,19 +7,50 @@ import (
 	"path/filepath"
 )
 
+const (
+	// DefaultStartupJitter 启动错峰上限（秒）：进程启动后随机延迟再连接服务器，避免大批Agent同时冲击服务端
+	DefaultStartupJitter = 120
+	// DefaultUpdateJitter 升级错峰上限（秒）：发现新版本后随机延迟再下载，避免同时拉取升级包打满服务端带宽
+	DefaultUpdateJitter = 1800
+)
+
 // Settings 应用配置
 type Settings struct {
-	Version     string
-	ServerURL   string `json:"ServerUrl"`
-	Group       string `json:"Group"`
-	CheckUpdate int    `json:"CheckUpdate"` // 更新检查间隔（秒），0表示使用默认值10分钟
-	Debug       bool   `json:"Debug"`
+	Version       string
+	ServerURL     string `json:"ServerUrl"`
+	Group         string `json:"Group"`
+	CheckUpdate   int    `json:"CheckUpdate"`   // 更新检查间隔（秒），0表示使用默认值10分钟
+	StartupJitter int    `json:"StartupJitter"` // 启动错峰上限（秒），0表示使用默认值，负数表示关闭错峰
+	UpdateJitter  int    `json:"UpdateJitter"`  // 升级下载错峰上限（秒），0表示使用默认值，负数表示关闭错峰
+	HubAuthToken  string `json:"HubAuthToken"`  // Hub鉴权令牌，需与服务端HubAuthToken一致；留空表示不携带
+	Debug         bool   `json:"Debug"`
 }
 
 // Default 默认配置
 var Default = Settings{
 	Version: "2.20",
 	Debug:   false,
+}
+
+// StartupJitterSeconds 返回启动错峰上限（秒），未配置时使用默认值
+func (s *Settings) StartupJitterSeconds() int {
+	return jitterSeconds(s.StartupJitter, DefaultStartupJitter)
+}
+
+// UpdateJitterSeconds 返回升级下载错峰上限（秒），未配置时使用默认值
+func (s *Settings) UpdateJitterSeconds() int {
+	return jitterSeconds(s.UpdateJitter, DefaultUpdateJitter)
+}
+
+// jitterSeconds 归一化错峰配置：负数表示关闭，0表示使用默认值
+func jitterSeconds(value, fallback int) int {
+	if value < 0 {
+		return 0
+	}
+	if value == 0 {
+		return fallback
+	}
+	return value
 }
 
 // LoadFromFile 从JSON配置文件加载配置

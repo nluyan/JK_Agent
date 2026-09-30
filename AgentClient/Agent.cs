@@ -14,13 +14,35 @@ internal class Agent
 {
 	string serverUrl;
 	string group;
+	string hubAuthToken;
 
 	public event EventHandler OnCheckUpdate;
 
-	public Agent(string url, string group)
+	// 连接失败后的重试间隔：5秒起步，指数退避到5分钟封顶，并叠加±30%抖动，
+	// 避免服务端不可用或Hub令牌不匹配时大批Agent高频重连把服务端打满
+	static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(5);
+	static readonly TimeSpan MaxRetryDelay = TimeSpan.FromMinutes(5);
+
+	static TimeSpan NextRetryDelay(TimeSpan current)
+	{
+		var next = current * 2;
+		return next > MaxRetryDelay ? MaxRetryDelay : next;
+	}
+
+	static TimeSpan JitterDelay(TimeSpan baseDelay)
+	{
+		if (baseDelay <= TimeSpan.Zero)
+			return baseDelay;
+		var span = baseDelay.TotalMilliseconds * 0.3;
+		var offset = Random.Shared.NextDouble() * 2 * span - span;
+		return TimeSpan.FromMilliseconds(Math.Max(0, baseDelay.TotalMilliseconds + offset));
+	}
+
+	public Agent(string url, string group, string hubAuthToken = "")
 	{
 		serverUrl = url;
 		this.group = group;
+		this.hubAuthToken = hubAuthToken ?? string.Empty;
 	}
 	public async Task Start(CancellationToken stoppingToken)
 	{
@@ -34,7 +56,12 @@ internal class Agent
 				Log.Debug("正在初始化SignalR连接...");
 
 				connection = new HubConnectionBuilder()
-					.WithUrl(serverUrl)
+					.WithUrl(serverUrl, options =>
+					{
+						// 服务端开启HubAuthToken后必须携带令牌：WebSocket走access_token查询串，HTTP走Authorization头
+						if (!string.IsNullOrEmpty(hubAuthToken))
+							options.AccessTokenProvider = () => Task.FromResult<string?>(hubAuthToken);
+					})
 					.AddMessagePackProtocol()
 					.WithAutomaticReconnect(new RetryPolicy())
 					.Build();
@@ -85,7 +112,17 @@ internal class Agent
 					}
 					catch (Exception ex)
 					{
-						Log.Error(ex, $"代理重新注册失败: {ex.Message}");
+						// 连接恢复时服务端可能仍保留原连接记录导致注册失败，此时改为更新Agent信息
+						Log.Warning($"代理重新注册失败: {ex.Message}，改为更新代理信息");
+						try
+						{
+							await ReportAgent("UpdateAgent");
+							Log.Information("代理信息更新成功");
+						}
+						catch (Exception updateEx)
+						{
+							Log.Error(updateEx, $"代理信息更新失败: {updateEx.Message}");
+						}
 					}
 				};
 
@@ -309,14 +346,15 @@ try {{
 				//	}
 				//}
 
-				async Task RegisterClient()
+				// 向服务端上报Agent信息，method 取 RegisterAgent 或 UpdateAgent
+				async Task ReportAgent(string method)
 				{
 					int platform = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 1 :
 						RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? 2 :
 						RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? 3 : 0;
 					string osArch = RuntimeInformation.OSArchitecture.ToString();
 					string osDesc = RuntimeInformation.OSDescription;
-					await connection.InvokeAsync("RegisterAgent",
+					await connection.InvokeAsync(method,
 						GetMacAddress(),
 						Settings.Version,
 						GetAllIP(),
@@ -324,7 +362,13 @@ try {{
 						platform,
 						osArch,
 						osDesc,
+						Dns.GetHostName(),
 						stoppingToken);
+				}
+
+				async Task RegisterClient()
+				{
+					await ReportAgent("RegisterAgent");
 					Log.Information("代理注册成功");
 				}
 
@@ -355,20 +399,29 @@ try {{
 				//	return null;
 				//}
 
+				// 每轮重新连接都从较短间隔开始退避
+				var retryDelay = InitialRetryDelay;
 				while (!stoppingToken.IsCancellationRequested)
 				{
 					try
 					{
-						Log.Debug($"尝试连接到服务器: {serverUrl}");
-						await connection.StartAsync(stoppingToken);
-						Log.Information("已连接到服务器...");
+						// 注册失败时连接可能仍处于已连接状态，此时只重试注册，避免反复StartAsync报错
+						if (connection.State != HubConnectionState.Connected)
+						{
+							Log.Debug($"尝试连接到服务器: {serverUrl}");
+							await connection.StartAsync(stoppingToken);
+							Log.Information("已连接到服务器...");
+						}
 						await RegisterClient();
 						break;
 					}
 					catch (Exception ex)
 					{
-						Log.Error($"连接失败：{ex.Message}");
-						await Task.Delay(5000);
+						Log.Error($"连接或注册失败：{ex.Message}");
+						var delay = JitterDelay(retryDelay);
+						Log.Warning($"{delay.TotalSeconds:0}秒后重试连接...");
+						await Task.Delay(delay);
+						retryDelay = NextRetryDelay(retryDelay);
 					}
 				}
 
@@ -563,12 +616,13 @@ public class RetryPolicy : IRetryPolicy
 	public TimeSpan? NextRetryDelay(RetryContext retryContext)
 	{
 		// 根据重试次数返回递增的延迟时间，但始终返回非null值确保永久重试
-		if (retryContext.PreviousRetryCount < delays.Length)
-		{
-			return delays[retryContext.PreviousRetryCount];
-		}
+		var delay = retryContext.PreviousRetryCount < delays.Length
+			? delays[retryContext.PreviousRetryCount]
+			: TimeSpan.FromSeconds(30); // 超过预定义次数后，使用固定的30秒间隔
 
-		// 超过预定义次数后，使用固定的30秒间隔
-		return TimeSpan.FromSeconds(30);
+		// 叠加 ±30% 抖动，避免大批Agent同时重连冲击服务端
+		var span = delay.TotalMilliseconds * 0.3;
+		var offset = Random.Shared.NextDouble() * 2 * span - span;
+		return TimeSpan.FromMilliseconds(Math.Max(0, delay.TotalMilliseconds + offset));
 	}
 }
