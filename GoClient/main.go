@@ -111,6 +111,14 @@ func main() {
 	}
 	defer logWriter.Close()
 
+	// 服务模式下 SCM 会丢弃 stderr，runtime fatal 之类的不可恢复错误会彻底无迹可寻；
+	// 这里把 stderr 同步落到日志目录，便于事后定位崩溃原因。
+	if !service.Interactive() {
+		if stderrFile, stderrErr := os.OpenFile(filepath.Join(workingDirectory, "logs", "stderr.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); stderrErr == nil {
+			os.Stderr = stderrFile
+		}
+	}
+
 	// 创建自定义LevelWriter，debug级别只输出到控制台，其他级别同时输出到文件和控制台
 	customWriter := zerolog.MultiLevelWriter(
 		&customLevelWriter{
