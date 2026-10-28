@@ -164,12 +164,14 @@ func describeWallpaper() string {
 		"session": currentSessionID(),
 		"account": currentAccountName(),
 	}
+	desktopReadable := true
 	if key, err := registry.OpenKey(registry.CURRENT_USER, desktopRegistryPath, registry.QUERY_VALUE); err == nil {
 		defer key.Close()
 		result["wallpaper"] = readRegistryString(key, "Wallpaper")
 		result["style"] = readRegistryString(key, "WallpaperStyle")
 		result["tile"] = readRegistryString(key, "TileWallpaper")
 	} else {
+		desktopReadable = false
 		result["problem"] = "读取用户桌面配置失败: " + err.Error()
 	}
 	if key, err := registry.OpenKey(registry.CURRENT_USER, wallpaperPolicyPath, registry.QUERY_VALUE); err == nil {
@@ -180,6 +182,9 @@ func describeWallpaper() string {
 	} else {
 		result["locked"] = false
 	}
+	// 服务端按 success/ok 字段判定原生命令成败，query 也必须带上，否则会被误报"壁纸命令执行失败"。
+	// 策略键不存在是常态（表示未锁定），不影响 ok。
+	result["ok"] = desktopReadable
 	return marshalWallpaperResult(result)
 }
 
