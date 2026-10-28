@@ -247,6 +247,17 @@ func acquirePrimaryToken(session UserSession, mode TokenMode) (windows.Token, er
 	if err != nil {
 		return 0, fmt.Errorf("复制主令牌失败: %w", err)
 	}
+	// SYSTEM 令牌属于 Session 0，必须显式改写它的会话号，否则 CreateProcessAsUser
+	// 创建的进程仍留在服务会话里，登录用户的桌面上看不到任何窗口。
+	// 改写会话号要求调用方持有 SeTcbPrivilege，LocalSystem 服务默认启用该特权。
+	if mode == TokenAsSystem {
+		sessionID := session.SessionID
+		if err := windows.SetTokenInformation(primary, windows.TokenSessionId,
+			(*byte)(unsafe.Pointer(&sessionID)), uint32(unsafe.Sizeof(sessionID))); err != nil {
+			windows.CloseHandle(windows.Handle(primary))
+			return 0, fmt.Errorf("把SYSTEM令牌切换到会话%d失败: %w", session.SessionID, err)
+		}
+	}
 	return primary, nil
 }
 
@@ -393,7 +404,8 @@ func grantUsersModifyOnDir(path string) error {
 	if err != nil {
 		return fmt.Errorf("解析Users组SID失败: %w", err)
 	}
-	defer windows.LocalFree(windows.Handle(unsafe.Pointer(usersSID)))
+	// StringToSid 内部已经 LocalFree 了系统分配的那份 SID，返回的是 Go 堆上的副本，
+	// 这里同样不能再 LocalFree，否则又是一个堆损坏。
 
 	entries := []windows.EXPLICIT_ACCESS{
 		{
@@ -412,7 +424,10 @@ func grantUsersModifyOnDir(path string) error {
 	if err != nil {
 		return fmt.Errorf("构建ACL失败: %w", err)
 	}
-	defer windows.LocalFree(windows.Handle(unsafe.Pointer(newACL)))
+	// 这里绝不能 LocalFree：ACLFromEntries 返回的 ACL 位于 Go 堆上（由 GC 管理），
+	// 把它交给 Win32 堆管理器会破坏进程堆，服务进程会以 STATUS_HEAP_CORRUPTION
+	// (0xC0000374) 静默死亡——SCM 只报"意外停止"，既不生成 WER 报告，
+	// runtime 的 fatal 文本也因为服务没有 stderr 而彻底丢失。
 
 	securityInfo := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION)
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, securityInfo, nil, nil, newACL, nil); err != nil {
