@@ -80,7 +80,7 @@ func testServer(t *testing.T, testNamePattern string, transports func(signalr.Pa
 
 func runJest(t *testing.T, testNamePattern string, quitServer chan struct{}) {
 	defer func() { quitServer <- struct{}{} }()
-	var jest = exec.Command(filepath.FromSlash("node_modules/.bin/jest"), fmt.Sprintf("--testNamePattern=%v", testNamePattern))
+	var jest = exec.Command("node", filepath.FromSlash("node_modules/jest/bin/jest.js"), fmt.Sprintf("--testNamePattern=%v", testNamePattern))
 	stdout, err := jest.StdoutPipe()
 	if err != nil {
 		t.Error(err)

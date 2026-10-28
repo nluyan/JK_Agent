@@ -299,6 +299,157 @@ background-color: #edf2f7;
      user-select: none;
         }
 
+        .command-panel {
+            flex: 0 0 340px;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+        }
+
+        .command-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #fafbfc;
+        }
+
+        .command-form {
+            background-color: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 15px;
+        }
+
+        .command-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 6px;
+        }
+
+        .command-hint {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #718096;
+            margin-bottom: 12px;
+        }
+
+        .command-form .field {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .command-form .field > span {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 4px;
+        }
+
+        .command-form input[type="text"],
+        .command-form input[type="number"],
+        .command-form select,
+        .command-form textarea {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            color: #2d3748;
+        }
+
+        .command-form textarea {
+            resize: vertical;
+        }
+
+        .command-form .field-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .command-form .field-row .field {
+            flex: 1;
+        }
+
+        .command-form .check {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+
+        .command-form .check input {
+            width: auto;
+        }
+
+        .field-hint {
+            font-size: 11px;
+            line-height: 1.6;
+            color: #a0aec0;
+            margin: -4px 0 10px;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .cmd-btn {
+            flex: 1;
+            background-color: #edf2f7;
+            color: #4a5568;
+            border: 1px solid #cbd5e0;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .cmd-btn:hover {
+            background-color: #e2e8f0;
+            border-color: #a0aec0;
+            color: #2d3748;
+        }
+
+        .cmd-btn.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+
+        .cmd-btn.primary:hover {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .command-type {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .command-type select {
+            padding: 8px 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            font-size: 13px;
+            background-color: white;
+            color: #2d3748;
+        }
   @@media (max-width: 1024px) {
      .container {
     flex-direction: column;
@@ -310,6 +461,15 @@ background-color: #edf2f7;
                 width: 100%;
   height: 50%;
       }
+
+            .command-panel {
+                flex: none;
+                width: 100%;
+            }
+
+            .command-body {
+                max-height: none;
+            }
 
     .header {
                 padding: 12px 20px;
@@ -381,6 +541,17 @@ background-color: #edf2f7;
           <textarea asp-for="ScriptContent" id="scriptTextarea" name="ScriptContent" style="display: none;"></textarea>
         </div>
               <div class="controls">
+               <label class="command-type">
+                <span>命令类型</span>
+                <select asp-for="CommandType">
+                 <option value="">PowerShell 脚本</option>
+                 <option value="UserSession">用户会话脚本</option>
+                 <option value="SNMP">SNMP（原始 JSON）</option>
+                 <option value="HardwareInfo">硬件信息采集</option>
+                 <option value="Watermark">水印（原始 JSON）</option>
+                 <option value="Wallpaper">壁纸（原始 JSON）</option>
+                </select>
+               </label>
                <button type="submit" id="executeBtn" class="execute-btn" @(Model.IsExecuting ? "disabled" : "")>
             @if (Model.IsExecuting)
   {
@@ -427,7 +598,7 @@ background-color: #edf2f7;
          @Model.ErrorMessage
   </div>
 }
-         else if (!string.IsNullOrEmpty(Model.ExecutionResult))
+         if (!string.IsNullOrEmpty(Model.ExecutionResult))
     {
     @Model.ExecutionResult
     }
@@ -445,6 +616,112 @@ background-color: #edf2f7;
      }
    </div>
       </div>
+        </div>
+
+        <div class="command-panel">
+            <div class="panel-header">[终端命令]</div>
+            <div class="command-body">
+                <form method="post" class="command-form" asp-page-handler="Watermark" asp-route-id="@Model.Id">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="Id" value="@Model.Id" />
+                    <div class="command-title">屏幕水印</div>
+                    <p class="command-hint">
+                        水印以 SYSTEM 身份绘制在登录用户的桌面上，普通用户关不掉也结束不了；
+                        服务端不保存配置，文案下发后由终端本地持久化，服务重启或进程被杀后自动恢复。
+                    </p>
+                    <label class="field">
+                        <span>水印文案</span>
+                        <input type="text" asp-for="Watermark.Text" placeholder="{HostName} - {UserName}" />
+                    </label>
+                    <div class="field-hint">
+                        服务端替换：{HostName} {Serial} {IP} {Group} {AgentId}<br />
+                        终端替换：{UserName} {SessionId} {DateTime}
+                    </div>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>不透明度(%)</span>
+                            <input type="number" asp-for="Watermark.Opacity" min="0" max="100" placeholder="28" />
+                        </label>
+                        <label class="field">
+                            <span>字号</span>
+                            <input type="number" asp-for="Watermark.FontSize" min="8" max="200" placeholder="20" />
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>颜色</span>
+                            <input type="text" asp-for="Watermark.Color" placeholder="#FFFFFF" />
+                        </label>
+                        <label class="field">
+                            <span>倾斜角度</span>
+                            <input type="number" asp-for="Watermark.Angle" min="-90" max="90" placeholder="-30" />
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>横向间距</span>
+                            <input type="number" asp-for="Watermark.SpacingX" min="0" max="10000" />
+                        </label>
+                        <label class="field">
+                            <span>纵向间距</span>
+                            <input type="number" asp-for="Watermark.SpacingY" min="0" max="10000" />
+                        </label>
+                    </div>
+                    <div class="button-row">
+                        <button type="submit" name="Watermark.Operation" value="show" class="cmd-btn primary">启用/更新</button>
+                        <button type="submit" name="Watermark.Operation" value="hide" class="cmd-btn">停用</button>
+                        <button type="submit" name="Watermark.Operation" value="query" class="cmd-btn">查询</button>
+                    </div>
+                </form>
+
+                <form method="post" class="command-form" asp-page-handler="Wallpaper" asp-route-id="@Model.Id">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="Id" value="@Model.Id" />
+                    <div class="command-title">桌面壁纸</div>
+                    <p class="command-hint">
+                        壁纸以登录用户身份设置，写入其 HKCU 配置单元；勾选锁定后用户在
+                        “设置 → 个性化” 里改不回来。图片可给地址由终端下载，也可直接粘贴 Base64。
+                    </p>
+                    <label class="field">
+                        <span>图片地址</span>
+                        <input type="text" asp-for="Wallpaper.ImageUrl" placeholder="http://server/bg.jpg" />
+                    </label>
+                    <label class="field">
+                        <span>或 Base64 图片</span>
+                        <textarea asp-for="Wallpaper.ImageBase64" rows="3" placeholder="可留空，支持 data:image/png;base64, 前缀"></textarea>
+                    </label>
+                    <div class="field-row">
+                        <label class="field">
+                            <span>显示方式</span>
+                            <select asp-for="Wallpaper.Style">
+                                <option value="">终端默认</option>
+                                <option value="10">填充</option>
+                                <option value="6">适应</option>
+                                <option value="2">拉伸</option>
+                                <option value="0">居中</option>
+                                <option value="22">跨区</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>文件名</span>
+                            <input type="text" asp-for="Wallpaper.FileName" placeholder="wallpaper.jpg" />
+                        </label>
+                    </div>
+                    <label class="check">
+                        <input type="checkbox" asp-for="Wallpaper.Tile" />
+                        <span>平铺显示</span>
+                    </label>
+                    <label class="check">
+                        <input type="checkbox" asp-for="Wallpaper.Lock" />
+                        <span>锁定壁纸，禁止用户自行更换</span>
+                    </label>
+                    <div class="button-row">
+                        <button type="submit" name="Wallpaper.Operation" value="set" class="cmd-btn primary">设置壁纸</button>
+                        <button type="submit" name="Wallpaper.Operation" value="clear" class="cmd-btn">恢复默认</button>
+                        <button type="submit" name="Wallpaper.Operation" value="query" class="cmd-btn">查询</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

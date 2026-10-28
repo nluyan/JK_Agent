@@ -210,6 +210,84 @@ SET 支持 `integer`、`string`/`octetString`、`base64`、`oid`、`gauge32`、`
 
 SNMP community、SNMPv3 认证密码和加密密码属于敏感信息，不要写入日志或长期保存到脚本历史中；生产环境优先使用 SNMPv3 `authPriv`。
 
+#### 特殊水印命令
+
+水印同样复用 `ExecutePowershellScript` 和 `PowershellScriptCallback`。脚本内容以 `__JK_AGENT_WATERMARK__` 开头，后面紧跟一个 JSON 对象；Go 客户端直接处理，不启动 PowerShell。
+
+服务端不保存任何水印配置：文案随命令下发后由客户端持久化到 `%ProgramData%\JikeAgent\state\watermark.json`，服务重启或水印进程被结束后由客户端看门狗（5 秒一轮）自动恢复。
+
+```text
+__JK_AGENT_WATERMARK__
+{"operation":"show","text":"{HostName} - {UserName} - 内部资料","opacity":28,"color":"#FFFFFF","fontSize":20,"angle":-30}
+```
+
+支持的操作：
+
+- `show`：启用水印，必须提供 `text`，或终端已存有文案。
+- `update`：只改样式，未提供的字段沿用终端本地已保存的值。
+- `hide`：停用水印并清除本地策略。
+- `query`：回读终端当前生效的水印状态。
+
+参数：
+
+- `text`：水印文案。
+- `opacity`：不透明度百分比，0–100，默认 28。
+- `color`：`#RRGGBB` 或 `#RGB`，默认 `#FFFFFF`，非法值回退为白色。
+- `fontSize`：字号，8–200，默认 20。
+- `angle`：倾斜角度，-90–90，默认 -30。
+- `spacingX` / `spacingY`：平铺间距，0–10000，默认 0。
+
+文案支持占位符。服务端替换 `{HostName}`、`{Serial}`、`{IP}`、`{Group}`、`{AgentId}`；客户端在每次投递时替换 `{UserName}`、`{SessionId}`、`{DateTime}`，因此换人登录后水印文案会跟着变。
+水印渲染进程以 SYSTEM 令牌投递到登录用户的 `WinSta0\Default` 桌面，窗口带 `WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，鼠标点击穿透且每秒重新置顶，每台显示器各一个窗口。进程属主是 SYSTEM，普通用户在任务管理器里结束它会得到“拒绝访问”；即使被管理员结束，看门狗也会在 5 秒内重新投递。
+
+返回值是 JSON，成功时 `ok` 为 `true`。
+
+#### 特殊壁纸命令
+
+脚本内容以 `__JK_AGENT_WALLPAPER__` 开头，后面紧跟一个 JSON 对象，同样由 Go 客户端直接处理。
+
+```text
+__JK_AGENT_WALLPAPER__
+{"operation":"set","imageUrl":"http://server/bg.jpg","style":10,"lock":true}
+```
+
+支持的操作：
+
+- `set`：设置壁纸，图片来自 `imageBase64` 或 `imageUrl`，二选一，`imageBase64` 优先。
+- `clear`：恢复系统默认壁纸并解除锁定。
+- `query`：回读该终端当前生效的壁纸配置。
+
+参数：
+
+- `imageBase64`：Base64 图片，支持 `data:image/png;base64,` 前缀，解码后最大 12MB。
+- `imageUrl`：图片下载地址，由客户端下载，超时 30 秒，最大 12MB。
+- `fileName`：落盘文件名，客户端会剥掉目录部分并替换非法字符，默认 `wallpaper.jpg`。
+- `style`：对应 `WallpaperStyle`，`0`=居中、`2`=拉伸、`6`=适应、`10`=填充（默认）、`22`=跨区。
+- `tile`：是否平铺，默认 `false`。
+- `lock`：是否锁定，默认 `true`。锁定后额外写入策略键，用户在“设置 → 个性化”里改不掉。
+壁纸图片落在 `%ProgramData%\JikeAgent\assets`，子进程以登录用户令牌运行：`SystemParametersInfo` 与 `HKCU` 都只对调用进程所属的用户生效，以 SYSTEM 身份调用会写进 `.DEFAULT` 配置单元，用户桌面上不会有任何变化。代价是用户能在任务管理器里结束这个子进程，但它执行完就退出，不影响已生效的壁纸。
+
+返回值是 JSON，成功时 `ok` 为 `true`，失败时 `problems` 列出具体原因。
+
+#### 用户会话脚本指令
+
+普通脚本在服务进程（Session 0）里执行，用户看不到任何界面。需要用户可见效果时，在脚本首行加上指令行：
+
+```text
+#JK-USERSESSION
+Start-Process notepad
+```
+
+可选标志：
+
+- `-System`：以 SYSTEM 身份运行，普通用户无法结束该进程。
+- `-NoWait`：只确认进程已启动，不等待脚本执行完成。
+- `-Session <id>`：指定会话，默认使用物理控制台会话。
+
+客户端识别首行指令后改用 `CreateProcessAsUser` 把脚本投递到登录用户的交互式桌面执行。指令行之后必须有实际脚本内容，否则整段按普通脚本处理。
+
+以 SYSTEM 身份运行时脚本只落在 SYSTEM 可写的 `tmp-system` 目录；用户令牌模式才使用 Users 可写的 `tmp-user`。SYSTEM 绝不从 `tmp-user` 加载脚本，否则普通用户替换文件内容即可把自己的代码提权到 SYSTEM 执行。
+
 脚本执行特性：
 - 自动处理 UTF-8/UTF-16 编码
 - 捕获标准输出和错误输出
@@ -283,9 +361,51 @@ Linux:
 ## 依赖项
 
 主要依赖：
-- `github.com/philippseith/signalr` - SignalR 客户端
+- `github.com/philippseith/signalr` - SignalR 客户端（本地分叉于 `signalr/`，详见「本地 signalr 依赖的分叉记录」）
 - `github.com/rs/zerolog` - 结构化日志
 - `github.com/kardianos/service` - 跨平台服务管理
+
+## 本地 signalr 依赖的分叉记录
+
+`signalr/` 与 `signalr/router/` 是 `github.com/philippseith/signalr` 的本地分叉，主模块通过 `replace github.com/philippseith/signalr => ./signalr` 引用。相对上游已有下列改动，重新同步上游时需逐条比对：
+
+| 位置 | 改动 | 原因 |
+|------|------|------|
+| `signalr/*.go` | WebTransport / quic-go 相关代码已注释禁用 | Windows 7 兼容（既有改动，非本次引入） |
+| `signalr/go.mod` | `gomega` v1.33.1、`ginkgo/v2` v2.17.2、`go-cmp` v0.6.0、`pprof` 2024 版、`x/crypto`~`x/tools` 一批钉在低版本 | 更高版本声明 `go 1.23`，会迫使本模块上调 `go 1.20`，进而破坏 `build_win7.ps1`（强制 `go1.20.14`） |
+| `signalr/router/router_test/router_test.go:116` | `WaitForState(...)` 前补 `<-` | 该方法返回 `<-chan error` 而非 `error`，漏解引用会让 gomega 报 `Expected an error-type` |
+| `signalr/chatsample/main.go:155`、`main_per_connection.go:114` | 补 `defer cancel()` | 消除 `lostcancel` vet 告警 |
+| `signalr/signalr_test/server_test.go:83` | 改为 `exec.Command("node", "node_modules/jest/bin/jest.js", ...)` | 绕开 cmd.exe，见下文 |
+
+`signalr/router` 未被主模块 import，也不在主模块 `go.mod` 中，其自身的 `go 1.23.0` 对 Win7 构建无影响。
+
+### 禁止在 signalr/ 内执行 go mod tidy
+
+`go mod tidy` 会把 `go 1.20` 升到 `go 1.23.0`，并连带删掉 `quic-go/quic-go`、`qpack`、`qtls-go1-20` 等 require——这些包的文件带 `go1.20` 构建约束，语言版本一升就静默失效。`go 1.20` 是 Win7 构建的硬约束，不能动。
+
+调整依赖请改用 `go mod edit "-require=模块@版本"` 配合 `go mod download`；改完用 `go mod tidy "-go=1.20" -diff` 复核，该命令在保持 `go 1.20` 的前提下报告差异且不落地。注意 PowerShell 会拆分含 `@` 或 `.` 的参数，这类参数必须整体加引号。
+
+### Windows 上 jest 的 ^ 转义问题
+
+`server_test.go` 原先执行 `node_modules/.bin/jest` 并传 `--testNamePattern=^smoke`。Windows 上该路径解析到 `jest.cmd`，需经 cmd.exe 执行，而 `^` 是 cmd.exe 的转义字符，`^smoke` 被吃成 `smoke`：
+
+- 锚定失效后，`smoke` 同时命中 `smoke test` 与 `MessagePack smoke test` 两个 describe
+- 后者使用 MessagePack（二进制协议），而 `TestServerSmokeSSE` 起的是 SSE-only 服务端
+- JS 客户端的 SSE 传输硬编码只支持 Text（见 `signalr_test/node_modules/@microsoft/signalr/dist/cjs/ServerSentEventsTransport.js:31`），于是必然报 `ServerSentEvents does not support Binary`
+
+改用 `node` 直接执行 `node_modules/jest/bin/jest.js` 可绕开 cmd.exe，`^` 得以保留。Linux/macOS 上原本就不受此影响。
+
+### 验证方式
+
+三个模块各自独立，根目录的 `go test ./...` 不跨模块边界，需分别执行：
+
+```
+cd GoClient;                 go build ./...; go vet ./...; go test ./...
+cd GoClient/signalr;         go build ./...; go vet ./...; go test ./...
+cd GoClient/signalr/router;  go build ./...; go vet ./...; go test ./...
+```
+
+`signalr_test` 需要本机有 Node 与 npm（其 `TestMain` 会执行 `npm install`）。`signalr` 与主模块还应用 `go1.20.14` 复验 `build` 与 `vet`，以确保 Win7 构建路径未被破坏。不要在这些目录内运行 `gofmt`：vendored 文件为 CRLF，格式化会把整个模块转成 LF，产生大量无关改动。
 
 ## 开发
 

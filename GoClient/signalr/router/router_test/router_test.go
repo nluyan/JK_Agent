@@ -113,7 +113,7 @@ var _ = Describe("Router", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(client).NotTo(BeNil())
 					client.Start()
-					Expect(client.WaitForState(context.Background(), signalr.ClientConnected)).NotTo(HaveOccurred())
+					Expect(<-client.WaitForState(context.Background(), signalr.ClientConnected)).NotTo(HaveOccurred())
 					Expect(err).NotTo(HaveOccurred())
 					result := <-client.Invoke("Add2", 1)
 					Expect(result.Error).NotTo(HaveOccurred())

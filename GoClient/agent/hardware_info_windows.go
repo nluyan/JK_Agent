@@ -29,6 +29,7 @@ type hardwareInfo struct {
 	Network        interface{} `json:"网络适配器信息"`
 	Motherboard    interface{} `json:"主板"`
 	Power          interface{} `json:"电源"`
+	Printers       interface{} `json:"打印机"`
 }
 
 type operatingSystemWMI struct {
@@ -163,6 +164,20 @@ type batteryWMI struct {
 	FullChargeCapacity uint32
 	BatteryStatus      uint16
 	EstimatedRunTime   uint32
+}
+
+type printerWMI struct {
+	Name          string
+	DeviceID      string
+	DriverName    string
+	PortName      string
+	PrinterStatus uint16
+	Default       bool
+	Network       bool
+	Shared        bool
+	WorkOffline   bool
+	Comment       string
+	Location      string
 }
 
 func queryHardware[T any](query string, dst *[]T) error {
@@ -466,11 +481,65 @@ func queryPowerInfo() interface{} {
 	return map[string]interface{}{"电源名称": textOr(row.Name, "未知型号"), "制造商": textOr(row.Manufacturer, "未知制造商"), "设计容量_mWh": row.DesignCapacity, "当前容量_mWh": row.FullChargeCapacity, "电源状态": status, "估计剩余时间_分钟": remaining}
 }
 
+func queryPrinterInfo() interface{} {
+	var rows []printerWMI
+	if err := queryHardware("SELECT Name, DeviceID, DriverName, PortName, PrinterStatus, Default, Network, Shared, WorkOffline, Comment, Location FROM Win32_Printer", &rows); err != nil || len(rows) == 0 {
+		return nil
+	}
+
+	return printerInfoFromRows(rows)
+}
+
+func printerInfoFromRows(rows []printerWMI) interface{} {
+	printers := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		// 排除网络打印机；本机打印机即使共享给其他电脑，也应纳入资产采集。
+		if row.Network {
+			continue
+		}
+		printers = append(printers, map[string]interface{}{
+			"名称":    textOr(row.Name, "未知打印机"),
+			"设备ID":  textOr(row.DeviceID, "未知"),
+			"驱动名称":  textOr(row.DriverName, "未知"),
+			"端口":    textOr(row.PortName, "未知"),
+			"打印机状态": printerStatusText(row.PrinterStatus),
+			"默认打印机": row.Default,
+			"网络打印机": row.Network,
+			"共享打印机": row.Shared,
+			"脱机":    row.WorkOffline,
+			"备注":    textOr(row.Comment, ""),
+			"位置":    textOr(row.Location, ""),
+			"耗材":    nil,
+			"打印计数":  nil,
+		})
+	}
+	if len(printers) == 0 {
+		return nil
+	}
+	return printers
+}
+
+func printerStatusText(status uint16) string {
+	statuses := map[uint16]string{
+		1: "其他",
+		2: "未知",
+		3: "空闲",
+		4: "打印中",
+		5: "预热中",
+		6: "停止打印",
+		7: "离线",
+	}
+	if value, ok := statuses[status]; ok {
+		return value
+	}
+	return fmt.Sprintf("未知状态: %d", status)
+}
+
 // CollectHardwareInfo collects hardware directly through WMI, without starting
 // PowerShell. Individual WMI classes are isolated so unsupported classes on a
 // particular Win7 image only produce null fields.
 func CollectHardwareInfo() (string, error) {
-	info := hardwareInfo{CollectionTime: time.Now().Format("2006-01-02 15:04:05"), System: querySystemInfo(), Computer: queryComputerInfo(), Processor: queryProcessorInfo(), Memory: queryMemoryInfo(), Disks: queryDiskInfo(), RAID: queryRAIDInfo(), GPU: queryGPUInfo(), Audio: queryAudioInfo(), NIC: queryNICInfo(), Network: queryNetworkInfo(), Motherboard: queryMotherboardInfo(), Power: queryPowerInfo()}
+	info := hardwareInfo{CollectionTime: time.Now().Format("2006-01-02 15:04:05"), System: querySystemInfo(), Computer: queryComputerInfo(), Processor: queryProcessorInfo(), Memory: queryMemoryInfo(), Disks: queryDiskInfo(), RAID: queryRAIDInfo(), GPU: queryGPUInfo(), Audio: queryAudioInfo(), NIC: queryNICInfo(), Network: queryNetworkInfo(), Motherboard: queryMotherboardInfo(), Power: queryPowerInfo(), Printers: queryPrinterInfo()}
 	data, err := json.Marshal(info)
 	if err != nil {
 		return "", fmt.Errorf("serialize hardware info: %w", err)

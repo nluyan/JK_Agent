@@ -206,7 +206,7 @@ app.MapPost("/api/login", (JwtService jwt, IConfiguration config, LoginDto dto) 
 // 避免线上 appsettings.json 漏配时静默退化成“任何人都能远程执行 PowerShell”。
 var apiAuthDisabled = app.Configuration["ApiAuth"] == "false";
 
-// 四个 /api/agent/* 端点只注册一次：原先 if/else 两个分支各写一份，
+// 所有 /api/agent/* 端点只注册一次：原先 if/else 两个分支各写一份，
 // 以后新增端点或改签名极易只改一边，造成鉴权分支与匿名分支行为不一致。
 var agentApi = app.MapGroup("/api/agent");
 if (apiAuthDisabled)
@@ -220,6 +220,12 @@ agentApi.MapPost("/execute", async (AgentService service, HttpRequest request, E
 		dto.ToExecuteDTO(),
 		dto.GetScriptText(),
 		request.Headers["X-JK-Agent-Command"].FirstOrDefault()));
+// 屏幕水印：文案支持 {HostName}/{Serial}/{IP}/{Group}/{AgentId} 占位符，服务端不保存配置。
+agentApi.MapPost("/watermark", async (AgentService service, WatermarkDTO dto)
+	=> await service.SetWatermark(dto));
+// 桌面壁纸：图片可 base64 内嵌或给 URL，lock=true 时用户改不掉。
+agentApi.MapPost("/wallpaper", async (AgentService service, WallpaperDTO dto)
+	=> await service.SetWallpaper(dto));
 agentApi.MapPost("/printer-driver/install", async (AgentService service, PrinterDriverInstallDTO dto)
 	=> await service.InstallPrinterDriver(dto));
 agentApi.MapPost("/remotedesk", async (AgentService service, RemoteDeskDTO dto)

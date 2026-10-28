@@ -111,7 +111,8 @@ func runHTTPClientPerConnection(address string, receiver interface{}) error {
 	c, err := signalr.NewClient(context.Background(), nil,
 		signalr.WithReceiver(receiver),
 		signalr.WithConnector(func() (signalr.Connection, error) {
-			creationCtx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+			creationCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
 			return signalr.NewHTTPConnection(creationCtx, address)
 		}),
 		signalr.Logger(kitlog.NewLogfmtLogger(os.Stdout), false))

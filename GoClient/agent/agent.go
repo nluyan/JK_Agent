@@ -539,10 +539,10 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 		} else {
 			r.agent.logger.Info().
 				Str("callID", callID).
-				Msgf("准备处理执行请求:\n%s", script)
+				Msgf("准备处理执行请求:\n%s", logScriptSummary(script))
 		}
 
-		// 特殊命令直接使用 Go 采集，避免调用 PowerShell。
+		// 特殊命令直接使用 Go 原生实现，避免调用 PowerShell。
 		if isSNMPCommand(script) {
 			outputText = executeSNMPCommand(script)
 			r.agent.logger.Info().Str("callID", callID).Msg("SNMP操作完成，跳过PowerShell")
@@ -553,6 +553,17 @@ func (r *AgentReceiver) ExecutePowershellScript(callID, script string) {
 				outputText = "硬件信息采集失败: " + err.Error()
 			}
 			r.agent.logger.Info().Str("callID", callID).Msg("硬件信息采集完成，跳过PowerShell")
+		} else if isWatermarkCommand(script) {
+			outputText = HandleWatermarkCommand(script)
+			r.agent.logger.Info().Str("callID", callID).Msg("水印命令处理完成，跳过PowerShell")
+		} else if isWallpaperCommand(script) {
+			outputText = HandleWallpaperCommand(script)
+			r.agent.logger.Info().Str("callID", callID).Msg("壁纸命令处理完成，跳过PowerShell")
+		} else if isUserSessionCommand(script) {
+			// 需要用户可见效果的脚本必须投递到登录用户的交互式桌面：
+			// 服务运行在 Session 0，在那里创建窗口或调用 SystemParametersInfo 用户完全看不到。
+			outputText = ExecuteScriptInUserSession(script)
+			r.agent.logger.Info().Str("callID", callID).Msg("用户会话脚本执行完成")
 		} else {
 			// 执行PowerShell脚本
 			outputText = ExecuteScriptNatively(script)

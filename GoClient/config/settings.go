@@ -28,7 +28,7 @@ type Settings struct {
 
 // Default 默认配置
 var Default = Settings{
-	Version: "2.21",
+	Version: "2.23",
 	Debug:   false,
 }
 

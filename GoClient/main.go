@@ -65,6 +65,12 @@ func main() {
 		return
 	}
 
+	// 子进程模式：壁纸设置与水印渲染由服务派生到登录用户会话中执行，
+	// 这类进程只做一件事后立即退出，不加载配置、不写服务日志、不连接服务器。
+	if runChildCommand(os.Args[1:]) {
+		return
+	}
+
 	if runtime.GOOS == "linux" && hasUninstallFlag(os.Args[1:]) {
 		if err := uninstallSystemdService(); err != nil {
 			log.Fatalf("卸载 systemd 服务失败: %v", err)
@@ -243,6 +249,9 @@ func (p *serviceProgram) run() {
 		p.updater.Start(p.ctx)
 	}
 
+	// 水印守护：周期校验水印策略与渲染进程，被用户结束或会话重建后自动恢复
+	agent.StartWatermarkWatchdog(p.ctx, p.logger)
+
 	// 启动Agent
 	if err := p.agent.Start(p.ctx); err != nil {
 		p.logError("Agent服务运行失败", err)
@@ -314,6 +323,24 @@ func hasUninstallFlag(args []string) bool {
 		if arg == "--uninstall" {
 			return true
 		}
+	}
+	return false
+}
+
+// runChildCommand 识别壁纸/水印子进程入口参数。命中时执行对应渲染逻辑并结束进程，
+// 返回 true 告知 main 不再继续走服务初始化流程。
+func runChildCommand(args []string) bool {
+	for i, arg := range args {
+		var exitCode int
+		switch arg {
+		case "--wallpaper":
+			exitCode = agent.RunWallpaperChild(args[i+1:])
+		case "--watermark":
+			exitCode = agent.RunWatermarkChild(args[i+1:])
+		default:
+			continue
+		}
+		os.Exit(exitCode)
 	}
 	return false
 }

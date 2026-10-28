@@ -3,7 +3,7 @@ module jkagent/goclient
 go 1.20
 
 require (
-	github.com/Microsoft/go-winio v0.6.2
+	github.com/Microsoft/go-winio v0.6.1
 	github.com/StackExchange/wmi v1.2.1
 	github.com/gosnmp/gosnmp v1.38.0 // keep Go 1.20/Windows 7 compatibility
 	github.com/kardianos/service v1.2.2
@@ -22,7 +22,7 @@ require (
 	github.com/teivah/onecontext v1.3.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/sys v0.34.0
 )
 
 replace github.com/philippseith/signalr => ./signalr

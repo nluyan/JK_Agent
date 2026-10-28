@@ -68,7 +68,7 @@ Browser Client (xterm.js, SignalR)
 | [AgentService.cs](AgentService.cs) | Manages in-memory agent registry (`ConcurrentDictionary`). Provides REST API endpoints and executes remote PowerShell scripts |
 | [JwtService.cs](JwtService.cs) | Generates JWT tokens for API authentication. Supports HMAC and RSA signing |
 | [AgentModel.cs](AgentModel.cs) | Agent data model (AgentId, IP, OS info, hostname, group) |
-| [DTO.cs](DTO.cs) | Request/response DTOs: `ExecuteDTO`, `RemoteDeskDTO`, `LoginDto`, `ExecuteResult` |
+| [DTO.cs](DTO.cs) | Request/response DTOs: `ExecuteDTO`, `WatermarkDTO`, `WallpaperDTO`, `RemoteDeskDTO`, `LoginDto`, `ExecuteResult` |
 
 ### API Endpoints
 
@@ -77,7 +77,14 @@ Browser Client (xterm.js, SignalR)
 | POST | `/api/login` | None | Admin login (cookie-based) |
 | GET | `/api/agent/list` | JWT | List all connected agents |
 | POST | `/api/agent/execute` | JWT | Execute PowerShell script |
+| POST | `/api/agent/watermark` | JWT | Show, update, hide or query the desktop watermark |
+| POST | `/api/agent/wallpaper` | JWT | Set, clear or query the desktop wallpaper |
 | POST | `/api/agent/remotedes` | JWT | Initiate remote desktop |
+
+`/api/agent/execute` also accepts an `X-JK-Agent-Command` header to send a raw native command
+payload instead of PowerShell: `SNMP`, `HardwareInfo`, `Watermark`, `Wallpaper` or `UserSession`.
+The server keeps no watermark or wallpaper state; a watermark text is issued once per agent and
+persisted on the endpoint, which restores it after a reboot or if the overlay process is killed.
 
 ### SignalR Protocol
 
