@@ -598,7 +598,7 @@ background-color: #edf2f7;
          @Model.ErrorMessage
   </div>
 }
-         if (!string.IsNullOrEmpty(Model.ExecutionResult))
+         @if (!string.IsNullOrEmpty(Model.ExecutionResult))
     {
     @Model.ExecutionResult
     }
